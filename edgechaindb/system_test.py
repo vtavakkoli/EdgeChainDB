@@ -46,6 +46,18 @@ class Report:
         self.environment = environment
         self.scenarios: list[ScenarioResult] = []
         self.notes: list[str] = []
+        self.output_dir: Path | None = None
+        self.extra: dict[str, Any] = {"status": "initializing"}
+
+    def configure_output(self, result_dir: Path, extra: dict[str, Any] | None = None) -> None:
+        self.output_dir = result_dir
+        if extra is not None:
+            self.extra = extra
+        self.write(result_dir, self.extra)
+
+    def checkpoint(self) -> None:
+        if self.output_dir is not None:
+            self.write(self.output_dir, self.extra)
 
     def run(
         self,
@@ -62,6 +74,7 @@ class Report:
                 details, metrics,
             )
             self.scenarios.append(result)
+            self.checkpoint()
             return value
         except Exception as exc:
             self.scenarios.append(
@@ -74,10 +87,12 @@ class Report:
                     {},
                 )
             )
+            self.checkpoint()
             return None
 
     def skip(self, name: str, category: str, details: str) -> None:
         self.scenarios.append(ScenarioResult(name, category, "SKIP", 0, details, {}))
+        self.checkpoint()
 
     @property
     def failed(self) -> int:
@@ -252,15 +267,29 @@ def validate_compose(path: Path, expected_devices: int) -> tuple[str, dict[str, 
         raise AssertionError(f"expected {expected_devices} device services, found {len(devices)}")
     if "gateway" not in services or "edgechain-net" not in data.get("networks", {}):
         raise AssertionError("gateway or edgechain-net is missing")
+    if "run" not in services or "test" not in services:
+        raise AssertionError("the run and test orchestration services are required")
+    run_dependencies = set(services["run"].get("depends_on", {}))
+    if not set(devices).issubset(run_dependencies):
+        raise AssertionError("run must start all device services")
+    test_command = " ".join(services["test"].get("command", []))
+    if "edgechain-benchmark" not in test_command:
+        raise AssertionError("test must execute edgechain-benchmark")
     ids = [services[name].get("environment", {}).get("DEVICE_ID") for name in devices]
     if len(set(ids)) != expected_devices or None in ids:
         raise AssertionError("device service IDs are missing or duplicated")
     volumes = [services[name].get("volumes", []) for name in devices]
     if not all(value for value in volumes):
         raise AssertionError("each device must have persistent state storage")
-    return "Compose defines an isolated gateway network and 20 persistent device nodes", {
-        "device_services": len(devices), "unique_device_ids": len(set(ids))
-    }
+    return (
+        "Compose defines run/test orchestration, an isolated gateway network, "
+        f"and {expected_devices} persistent device nodes",
+        {
+            "device_services": len(devices),
+            "unique_device_ids": len(set(ids)),
+            "run_dependencies": len(run_dependencies),
+        },
+    )
 
 
 def run_nodes(
@@ -322,6 +351,7 @@ def run_suite(args: argparse.Namespace) -> int:
             "events_per_device": args.events_per_device,
         },
     )
+    report.configure_output(result_dir, {"status": "running", "final_stats": {}})
     if not docker_available and args.mode == "local":
         report.notes.append(
             "Docker is not installed in the execution environment. The Compose file was "
@@ -405,6 +435,13 @@ def run_suite(args: argparse.Namespace) -> int:
                 "Twenty Docker device nodes",
                 "Scale and concurrency",
                 check_compose_devices,
+            )
+            report.run(
+                "Twenty-node benchmark ingestion",
+                "Performance benchmark",
+                lambda: run_nodes(
+                    gateway, args.expected_devices, args.events_per_device
+                ),
             )
 
         test_id = f"security-{uuid.uuid4().hex[:10]}"
@@ -558,11 +595,22 @@ def run_suite(args: argparse.Namespace) -> int:
             report.skip(
                 "Persistent restart recovery",
                 "Durability",
-                "Run scripts/run_docker_tests.sh to execute the host-controlled Docker restart test.",
+                "The Docker benchmark service appends the host-controlled gateway restart result.",
             )
 
-        final_stats = gateway.json("GET", "/stats") if args.mode == "remote" or server else {}
-        report.write(result_dir, {"final_stats": final_stats})
+        try:
+            final_stats = (
+                gateway.json("GET", "/stats")
+                if args.mode == "remote" or server
+                else {}
+            )
+        except Exception as exc:
+            final_stats = {"error": f"{type(exc).__name__}: {exc}"}
+            report.notes.append(
+                "Final gateway statistics could not be read; the report was still generated."
+            )
+        report.extra = {"status": "completed", "final_stats": final_stats}
+        report.write(result_dir, report.extra)
     finally:
         if server is not None and thread is not None:
             stop_local_server(server, thread)

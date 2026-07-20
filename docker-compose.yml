@@ -1,11 +1,10 @@
-name: edgechaindb-20-node-test
-
+name: edgechaindb
 x-device-common: &device-common
   build:
     context: .
     dockerfile: Dockerfile
-  command: ["edgechain-device"]
-  restart: "no"
+  command: ["edgechain-device", "--continuous"]
+  restart: unless-stopped
   read_only: true
   tmpfs:
     - /tmp
@@ -15,19 +14,27 @@ x-device-common: &device-common
     - no-new-privileges:true
   mem_limit: 128m
   cpus: 0.25
+  stop_grace_period: 10s
   depends_on:
     gateway:
       condition: service_healthy
   networks:
     - edgechain-net
+  healthcheck:
+    test: ["CMD", "python", "-c", "import json,pathlib; p=pathlib.Path('/data/state.json'); d=json.loads(p.read_text()) if p.exists() else {}; raise SystemExit(0 if int(d.get('sequence',0)) > 0 else 1)"]
+    interval: 5s
+    timeout: 3s
+    retries: 24
+    start_period: 10s
   environment: &device-environment
     GATEWAY_URL: http://gateway:8000
     DEVICE_STATE_DIR: /data
     DEVICE_EVENTS: "8"
-    DEVICE_INTERVAL_MS: "20"
+    DEVICE_INTERVAL_MS: "1000"
     DEVICE_STARTUP_JITTER_MS: "1500"
     DEVICE_MAX_RETRIES: "40"
     DEVICE_REQUEST_TIMEOUT: "10"
+    DEVICE_CONTINUOUS: "1"
 
 services:
   gateway:
@@ -35,6 +42,7 @@ services:
       context: .
       dockerfile: Dockerfile
     command: ["edgechain-api", "--database", "/data/edgechain.db", "--node-key", "/data/gateway.key", "--node-id", "gateway-01", "--quorum", "1", "--batch-size", "25", "--host", "0.0.0.0", "--port", "8000"]
+    user: "0:0"
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -46,9 +54,14 @@ services:
     mem_limit: 512m
     cpus: 1.0
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
+    environment:
+      EDGECHAIN_COMPOSE_PROJECT: "${COMPOSE_PROJECT_NAME:-edgechaindb}"
+      EDGECHAIN_RESULT_DIR: /results
     volumes:
       - gateway-data:/data
+      - ./result:/results:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - edgechain-net
     healthcheck:
@@ -56,7 +69,7 @@ services:
       interval: 3s
       timeout: 3s
       retries: 30
-      start_period: 3s
+      start_period: 5s
 
   device-01:
     <<: *device-common
@@ -218,23 +231,95 @@ services:
     volumes:
       - device-20-data:/data
 
-  test-runner:
+  run:
     build:
       context: .
       dockerfile: Dockerfile
-    profiles: ["test"]
-    user: "${EDGECHAIN_UID:-1000}:${EDGECHAIN_GID:-1000}"
+    command: ["edgechain-cluster-runtime"]
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
-    command: ["edgechain-system-test", "--mode", "remote", "--base-url", "http://gateway:8000", "--expected-devices", "20", "--events-per-device", "8", "--result-dir", "/app/result", "--compose-file", "/app/docker-compose.yml"]
+    environment:
+      GATEWAY_URL: http://gateway:8000
+      CLUSTER_STATUS_INTERVAL: "30"
     depends_on:
       gateway:
+        condition: service_healthy
+      device-01:
+        condition: service_healthy
+      device-02:
+        condition: service_healthy
+      device-03:
+        condition: service_healthy
+      device-04:
+        condition: service_healthy
+      device-05:
+        condition: service_healthy
+      device-06:
+        condition: service_healthy
+      device-07:
+        condition: service_healthy
+      device-08:
+        condition: service_healthy
+      device-09:
+        condition: service_healthy
+      device-10:
+        condition: service_healthy
+      device-11:
+        condition: service_healthy
+      device-12:
+        condition: service_healthy
+      device-13:
+        condition: service_healthy
+      device-14:
+        condition: service_healthy
+      device-15:
+        condition: service_healthy
+      device-16:
+        condition: service_healthy
+      device-17:
+        condition: service_healthy
+      device-18:
+        condition: service_healthy
+      device-19:
+        condition: service_healthy
+      device-20:
+        condition: service_healthy
+    networks:
+      - edgechain-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://gateway:8000/health', timeout=2).read()"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["test"]
+    user: "0:0"
+    command: ["edgechain-benchmark", "--base-url", "http://gateway:8000", "--expected-devices", "20", "--events-per-device", "8", "--result-dir", "/app/result", "--compose-file", "/app/docker-compose.yml", "--project-root", "/app"]
+    restart: "no"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      EDGECHAIN_COMPOSE_PROJECT: "${COMPOSE_PROJECT_NAME:-edgechaindb}"
+    depends_on:
+      run:
         condition: service_healthy
     volumes:
       - ./result:/app/result
       - ./docker-compose.yml:/app/docker-compose.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - edgechain-net
 

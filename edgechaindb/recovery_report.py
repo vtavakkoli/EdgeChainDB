@@ -13,27 +13,22 @@ import httpx
 from .system_test import render_html
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Append a host-controlled Docker restart result to the HTML report"
-    )
-    parser.add_argument("--base-url", default="http://gateway:8000")
-    parser.add_argument("--result-dir", default="result")
-    parser.add_argument("--timeout", type=float, default=30.0)
-    args = parser.parse_args()
-
-    result_dir = Path(args.result_dir)
+def append_recovery_result(
+    *, base_url: str,
+    result_dir: Path,
+    timeout: float = 30.0,
+) -> bool:
     result_path = result_dir / "result.json"
     if not result_path.exists():
-        raise SystemExit(f"missing report data: {result_path}")
+        raise FileNotFoundError(f"missing report data: {result_path}")
 
     started = time.perf_counter()
-    deadline = time.time() + args.timeout
+    deadline = time.time() + timeout
     verification: dict[str, Any] | None = None
     error: str | None = None
     while time.time() < deadline:
         try:
-            with httpx.Client(base_url=args.base_url, timeout=5) as client:
+            with httpx.Client(base_url=base_url, timeout=5) as client:
                 health = client.get("/health")
                 health.raise_for_status()
                 response = client.get("/verify")
@@ -48,7 +43,8 @@ def main() -> None:
 
     data = json.loads(result_path.read_text(encoding="utf-8"))
     data["scenarios"] = [
-        item for item in data["scenarios"]
+        item
+        for item in data["scenarios"]
         if item["name"] != "Persistent restart recovery"
     ]
     passed = verification is not None and verification.get("valid") is True
@@ -75,9 +71,38 @@ def main() -> None:
         "skipped": sum(x["status"] == "SKIP" for x in data["scenarios"]),
         "total": len(data["scenarios"]),
     }
+    data.setdefault("extra", {})["status"] = "completed"
     result_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
     (result_dir / "report.html").write_text(render_html(data), encoding="utf-8")
-    print(json.dumps({"valid": passed, "report": str(result_dir / 'report.html')}, indent=2))
+    return passed
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Append a Docker restart result to the HTML report"
+    )
+    parser.add_argument("--base-url", default="http://gateway:8000")
+    parser.add_argument("--result-dir", default="result")
+    parser.add_argument("--timeout", type=float, default=30.0)
+    args = parser.parse_args()
+
+    try:
+        passed = append_recovery_result(
+            base_url=args.base_url,
+            result_dir=Path(args.result_dir),
+            timeout=args.timeout,
+        )
+    except Exception as exc:
+        raise SystemExit(str(exc)) from exc
+    print(
+        json.dumps(
+            {
+                "valid": passed,
+                "report": str(Path(args.result_dir) / "report.html"),
+            },
+            indent=2,
+        )
+    )
     raise SystemExit(0 if passed else 1)
 
 

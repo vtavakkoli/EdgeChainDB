@@ -189,45 +189,19 @@ literature and patent search has been completed.
 
 ## Docker Compose: 20 isolated IoT nodes
 
-Version 0.2 adds a complete distributed testbed:
+Version 0.3 provides a complete distributed testbed:
 
 - one gateway container with persistent SQLite WAL storage;
-- twenty independent device containers;
+- twenty continuously running, independently controlled device containers;
 - a private `edgechain-iot-net` bridge network;
-- a separate persistent key and chain checkpoint for every device;
-- concurrent signed event delivery with retries and startup jitter;
-- idempotent enrollment and retry-safe event ingestion;
-- an automated attack, recovery, scale, Merkle-proof, and audit suite;
-- an HTML report in `result/report.html`.
+- a persistent key and chain checkpoint for every device;
+- a live gateway dashboard for state, events, and node controls;
+- automated attack, recovery, scale, Merkle-proof, and audit scenarios;
+- fail-safe JSON and HTML reports under `result/`.
 
-### Linux/macOS
-
-```bash
-./scripts/run_docker_tests.sh
-```
-
-### Windows PowerShell
-
-```powershell
-./scripts/run_docker_tests.ps1
-```
-
-The scripts build the image, start the gateway, run all 20 device containers,
-execute the Python test suite and distributed scenarios, restart the gateway,
-verify the persisted ledger, append the Docker restart result to the HTML report,
-and save logs and reports under `result/`.
-
-You can also start the topology manually:
-
-```bash
-docker compose build
-docker compose up -d gateway
-docker compose up device-01 device-02 device-03 device-04 device-05 \
-  device-06 device-07 device-08 device-09 device-10 \
-  device-11 device-12 device-13 device-14 device-15 \
-  device-16 device-17 device-18 device-19 device-20
-docker compose --profile test run --rm test-runner
-```
+The exact `run` and `test` commands are documented below. The helper scripts
+`./scripts/run_docker_tests.sh` and `./scripts/run_docker_tests.ps1` execute the
+same benchmark workflow and wait for its completion.
 
 ### Run the equivalent local integration suite
 
@@ -248,3 +222,89 @@ tampering, replay-safe retries, out-of-order messages, broken chain links,
 checkpoint recovery, automatic and manual block sealing, quorum finality,
 valid and altered Merkle proofs, complete ledger audit, and persistent restart
 recovery.
+
+## Docker workflows and live cluster dashboard
+
+The Compose topology now exposes two explicit workflows.
+
+### 1. Start the complete running cluster
+
+```bash
+docker compose up -d run
+```
+
+The equivalent legacy spelling is:
+
+```bash
+docker-compose up -d run
+```
+
+This starts:
+
+- the persistent gateway;
+- 20 continuously running IoT device containers;
+- the `run` coordinator that keeps the topology active.
+
+Open the live gateway dashboard at:
+
+```text
+http://localhost:8000/dashboard
+```
+
+The dashboard shows container state, ledger state, recent events, sequence
+checkpoints, health, and exit codes. It can start, stop, restart, pause, or
+resume one device or all devices. The API documentation remains available at
+`http://localhost:8000/docs`.
+
+### 2. Run the complete Docker benchmark
+
+```bash
+docker compose up -d test
+```
+
+The `test` service waits until all 20 devices have generated telemetry, stops
+them to create a stable benchmark window, runs unit/integration/security/scale
+scenarios, restarts the gateway, verifies persistent recovery, writes the
+report, and resumes the devices.
+
+Follow its progress with:
+
+```bash
+docker compose logs -f test
+```
+
+Generated files:
+
+```text
+result/report.html
+result/result.json
+result/pytest.txt
+result/docker-compose.log
+result/benchmark-status.json
+```
+
+The latest completed report is also linked from the dashboard and served at
+`http://localhost:8000/benchmark/report`.
+
+### Why the previous PowerShell script failed
+
+The device containers are one-shot in the old test workflow. A successful
+container could finish before this command ran:
+
+```powershell
+docker compose ps -q device-02
+```
+
+By default, `docker compose ps -q` returns only running containers. Therefore,
+`device-02` existed and exited successfully, but the script interpreted the
+empty lookup as “No container found.” The corrected scripts query the one-shot
+`test` container with `--all`, and the benchmark no longer performs a fragile
+per-device container lookup.
+
+### Development security note
+
+The local dashboard controls containers through the mounted Docker socket. The
+published port is therefore restricted to `127.0.0.1`. Treat this as a local
+research/development control plane only. Do not expose it to a network or the
+Internet, and replace Docker-socket access with an authenticated orchestrator
+before production use.

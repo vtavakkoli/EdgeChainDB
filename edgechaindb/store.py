@@ -220,6 +220,41 @@ class Database:
             """
         )
 
+    def recent_events(self, limit: int = 100) -> list[sqlite3.Row]:
+        limit = min(max(int(limit), 1), 1000)
+        return self.execute_read(
+            """
+            SELECT event_hash, device_id, sequence, device_time_ms, event_type,
+                   payload_cbor, previous_event_hash, received_at_ms,
+                   block_height, finalized
+            FROM events
+            ORDER BY received_at_ms DESC, rowid DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+
+    def device_activity(self) -> dict[str, dict[str, int | None]]:
+        rows = self.execute_read(
+            """
+            SELECT d.device_id, d.last_sequence, MAX(e.received_at_ms) AS last_event_at_ms
+            FROM devices AS d
+            LEFT JOIN events AS e ON e.device_id = d.device_id
+            GROUP BY d.device_id, d.last_sequence
+            """
+        )
+        return {
+            row["device_id"]: {
+                "last_sequence": int(row["last_sequence"]),
+                "last_event_at_ms": (
+                    int(row["last_event_at_ms"])
+                    if row["last_event_at_ms"] is not None
+                    else None
+                ),
+            }
+            for row in rows
+        }
+
     def statistics(self) -> dict[str, int]:
         with self.connect() as connection:
             devices = connection.execute(
