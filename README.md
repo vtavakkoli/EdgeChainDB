@@ -150,30 +150,6 @@ The gateway must verify the signature and continuity before acknowledging or
 persisting the event. MQTT QoS does not replace replay protection; duplicate
 delivery is expected and is handled by the event hash and sequence constraints.
 
-## Suggested research contribution
-
-A defensible paper contribution could be evaluated as:
-
-**Continuity-Aware Quorum Ledger for Intermittently Connected IoT**
-
-The testable hypothesis is that the dual micro/macro-chain detects dropped,
-replayed, and gateway-tampered telemetry with lower device energy and lower
-finalization latency than proof-of-work or per-event distributed consensus.
-
-Measure:
-
-- signing energy per event;
-- bytes per event;
-- gateway ingest throughput;
-- block finalization latency;
-- storage overhead;
-- replay and deletion detection rate;
-- behavior under offline buffering and reconnection;
-- Byzantine authority tolerance for different quorum sizes.
-
-Do not describe the system as scientifically novel until a structured
-literature and patent search has been completed.
-
 ## Production work still required
 
 - Mutual TLS and authenticated administrative enrollment.
