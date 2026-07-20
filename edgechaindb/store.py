@@ -682,3 +682,68 @@ class Database:
             """,
             (device_id, limit),
         )
+    def database_info(self, *, run_quick_check: bool = False) -> dict:
+        """Return operational metadata without exposing secret key material."""
+
+        path = Path(self.path)
+        wal_path = Path(f"{self.path}-wal")
+        shm_path = Path(f"{self.path}-shm")
+        with self.connect() as connection:
+            pragmas = {
+                "journal_mode": connection.execute("PRAGMA journal_mode").fetchone()[0],
+                "synchronous": connection.execute("PRAGMA synchronous").fetchone()[0],
+                "foreign_keys": bool(
+                    connection.execute("PRAGMA foreign_keys").fetchone()[0]
+                ),
+                "busy_timeout_ms": connection.execute(
+                    "PRAGMA busy_timeout"
+                ).fetchone()[0],
+                "page_size": connection.execute("PRAGMA page_size").fetchone()[0],
+                "page_count": connection.execute("PRAGMA page_count").fetchone()[0],
+                "freelist_count": connection.execute(
+                    "PRAGMA freelist_count"
+                ).fetchone()[0],
+                "schema_version": connection.execute(
+                    "PRAGMA schema_version"
+                ).fetchone()[0],
+            }
+            tables = [
+                row[0]
+                for row in connection.execute(
+                    """
+                    SELECT name FROM sqlite_master
+                    WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+                    ORDER BY name
+                    """
+                ).fetchall()
+            ]
+            quick_check = None
+            if run_quick_check:
+                quick_check = connection.execute("PRAGMA quick_check(1)").fetchone()[0]
+
+        allocated_bytes = pragmas["page_size"] * pragmas["page_count"]
+        used_bytes = pragmas["page_size"] * (
+            pragmas["page_count"] - pragmas["freelist_count"]
+        )
+        return {
+            "engine": "SQLite",
+            "path": self.path,
+            "exists": path.exists(),
+            "database_bytes": path.stat().st_size if path.exists() else 0,
+            "wal_bytes": wal_path.stat().st_size if wal_path.exists() else 0,
+            "shared_memory_bytes": shm_path.stat().st_size if shm_path.exists() else 0,
+            "allocated_bytes": allocated_bytes,
+            "used_bytes": used_bytes,
+            "tables": tables,
+            "pragmas": pragmas,
+            "quick_check": quick_check,
+            "features": [
+                "Ed25519 device signatures",
+                "per-device hash-linked micro-chains",
+                "Merkle-rooted blocks",
+                "quorum block signatures",
+                "idempotent event delivery",
+                "WAL crash recovery",
+            ],
+        }
+

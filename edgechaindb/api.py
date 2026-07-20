@@ -74,7 +74,7 @@ def create_app(
 
     app = FastAPI(
         title="EdgeChainDB",
-        version="0.4.0",
+        version="0.5.0",
         description=(
             "Edge-first, signed and quorum-finalized IoT telemetry ledger with a "
             "development cluster monitor. Administrative endpoints require strong "
@@ -143,6 +143,24 @@ def create_app(
     @app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
     def dashboard() -> HTMLResponse:
         return HTMLResponse(render_dashboard())
+
+    @app.get("/monitor/health")
+    def monitor_health() -> dict[str, Any]:
+        return {
+            "status": "ok",
+            "dashboard": "ready",
+            "node_id": app.state.node_id,
+            "api_port": getattr(app.state, "api_port", 8000),
+            "monitor_port": getattr(app.state, "monitor_port", 3030),
+            "dashboard_marker": "EdgeChainDB Cluster Monitor",
+        }
+
+    @app.get("/database/info")
+    def database_info(quick_check: bool = False) -> dict[str, Any]:
+        return {
+            **database.database_info(run_quick_check=quick_check),
+            "statistics": database.statistics(),
+        }
 
     @app.get("/health")
     def health() -> dict[str, Any]:

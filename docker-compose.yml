@@ -51,7 +51,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: ["edgechain-api", "--database", "/data/edgechain.db", "--node-key", "/data/gateway.key", "--node-id", "gateway-01", "--quorum", "1", "--batch-size", "25", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["edgechain-gateway", "--database", "/data/edgechain.db", "--node-key", "/data/gateway.key", "--node-id", "gateway-01", "--quorum", "1", "--batch-size", "25", "--host", "0.0.0.0", "--api-port", "8000", "--monitor-port", "3030"]
     user: "0:0"
     restart: unless-stopped
     <<: *json-logging
@@ -73,9 +73,8 @@ services:
     cpus: 1.0
     ports:
       - "127.0.0.1:8000:8000"
-      # Dedicated observability entry point. Both ports reach the same hardened
-      # gateway process; localhost:3030 opens the network operations dashboard.
-      - "127.0.0.1:3030:8000"
+      # A real second listener runs inside the gateway container.
+      - "127.0.0.1:3030:3030"
     environment:
       EDGECHAIN_COMPOSE_PROJECT: "${COMPOSE_PROJECT_NAME:-edgechaindb}"
       EDGECHAIN_RESULT_DIR: /results
@@ -88,7 +87,7 @@ services:
     networks:
       - edgechain-net
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()"]
+      test: ["CMD", "python", "-c", "import json,urllib.request; a=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=3)); m=json.load(urllib.request.urlopen('http://127.0.0.1:3030/monitor/health',timeout=3)); h=urllib.request.urlopen('http://127.0.0.1:3030/',timeout=3).read(); raise SystemExit(0 if a.get('status')=='ok' and m.get('dashboard')=='ready' and b'EdgeChainDB Cluster Monitor' in h else 1)"]
       interval: 3s
       timeout: 3s
       retries: 30

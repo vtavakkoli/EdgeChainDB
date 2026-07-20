@@ -111,3 +111,30 @@ def test_cluster_state_exposes_live_sensor_observability(tmp_path):
     assert observed["last_payload"]["battery_millivolts"] == 3690
     assert observed["events_last_minute"] >= 1
     assert observed["clock_lag_ms"] is not None
+
+
+def test_monitor_health_and_database_metadata(tmp_path):
+    app = create_app(
+        database_path=str(tmp_path / "metadata.db"),
+        node_key_path=str(tmp_path / "metadata.key"),
+        node_id="metadata-gateway",
+        quorum_threshold=1,
+        batch_size=25,
+    )
+    app.state.api_port = 18000
+    app.state.monitor_port = 13030
+    client = TestClient(app)
+
+    monitor = client.get("/monitor/health")
+    assert monitor.status_code == 200
+    assert monitor.json()["dashboard"] == "ready"
+    assert monitor.json()["monitor_port"] == 13030
+
+    info = client.get("/database/info?quick_check=true")
+    assert info.status_code == 200
+    body = info.json()
+    assert body["engine"] == "SQLite"
+    assert body["pragmas"]["journal_mode"].lower() == "wal"
+    assert body["quick_check"] == "ok"
+    assert "events" in body["tables"]
+    assert "Merkle-rooted blocks" in body["features"]

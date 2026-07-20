@@ -26,7 +26,9 @@ def test_gateway_publishes_monitor_port_and_rotates_all_logs():
 
     compose = yaml.safe_load(Path("docker-compose.yml").read_text())
     services = compose["services"]
-    assert "127.0.0.1:3030:8000" in services["gateway"]["ports"]
+    assert "127.0.0.1:3030:3030" in services["gateway"]["ports"]
+    assert services["gateway"]["command"][0] == "edgechain-gateway"
+    assert "--monitor-port" in services["gateway"]["command"]
     for name in ["gateway", "run", "test", "device-01", "device-20"]:
         logging = services[name]["logging"]
         assert logging["driver"] == "local"
