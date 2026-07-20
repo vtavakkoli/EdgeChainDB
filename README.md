@@ -33,7 +33,7 @@ The gateway chain detects:
 ## Architecture
 
 ```mermaid
-flowchart TD
+flowchart LR
     D[IoT Device]
 
     E1[Signed Event #1]
