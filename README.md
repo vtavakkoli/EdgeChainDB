@@ -32,23 +32,34 @@ The gateway chain detects:
 
 ## Architecture
 
-```text
-IoT device
-  └─ signed event #1 → signed event #2 → signed event #3
-                         device micro-chain
-                                  │
-                                  ▼
-                       validating edge gateway
-                                  │
-                    verified pending event pool
-                                  │
-                                  ▼
-     Merkle block N-1 ← Merkle block N ← Merkle block N+1
-                                  │
-                         2-of-3 authority quorum
-                                  │
-                                  ▼
-                      finalized queryable ledger
+```mermaid
+flowchart LR
+    subgraph Device["IoT Device Hash Chain"]
+        direction LR
+        E1["Signed Event #N-1"]
+        E2["Signed Event #N"]
+        E3["Signed Event #N+1"]
+
+        E1 -->|previous-event hash| E2
+        E2 -->|previous-event hash| E3
+    end
+
+    E3 --> G["Validating<br/>Edge Gateway"]
+    G --> P["Verified Pending<br/>Event Pool"]
+
+    subgraph Ledger["Hash-Linked Merkle Ledger"]
+        direction LR
+        B1["Block N-1<br/>Merkle Root"]
+        B2["Block N<br/>Merkle Root"]
+        B3["Block N+1<br/>Merkle Root"]
+
+        B1 --> B2
+        B2 --> B3
+    end
+
+    P -->|batch verified events| B2
+    B2 --> Q["2-of-3<br/>Authority Quorum"]
+    Q --> L["Finalized<br/>Queryable Ledger"]
 ```
 
 ## Security choices
@@ -443,8 +454,8 @@ multi-gateway database: production use still needs authenticated enrollment,
 TLS/mTLS, secret management, authorization, backup/restore, schema migrations,
 rate limits, multi-authority deployment, and replicated failover.
 
-### Fixed restart-verification timeout
 
+<<<<<<< HEAD
 Full ledger verification validates every signature, device micro-chain, Merkle
 root, block link, and quorum signature. On a ledger with roughly 9,600 events,
 that verification took about 13 seconds. The previous recovery checker used a
@@ -466,6 +477,8 @@ By default, `docker compose ps -q` returns only running containers. Therefore,
 empty lookup as “No container found.” The corrected scripts query the one-shot
 `test` container with `--all`, and the benchmark no longer performs a fragile
 per-device container lookup.
+=======
+>>>>>>> e7c3c783366c1a5f5ce9c1c80b2918f72c836bc3
 
 ### Development security note
 
