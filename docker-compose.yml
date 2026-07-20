@@ -1,0 +1,268 @@
+name: edgechaindb-20-node-test
+
+x-device-common: &device-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  command: ["edgechain-device"]
+  restart: "no"
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  mem_limit: 128m
+  cpus: 0.25
+  depends_on:
+    gateway:
+      condition: service_healthy
+  networks:
+    - edgechain-net
+  environment: &device-environment
+    GATEWAY_URL: http://gateway:8000
+    DEVICE_STATE_DIR: /data
+    DEVICE_EVENTS: "8"
+    DEVICE_INTERVAL_MS: "20"
+    DEVICE_STARTUP_JITTER_MS: "1500"
+    DEVICE_MAX_RETRIES: "40"
+    DEVICE_REQUEST_TIMEOUT: "10"
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["edgechain-api", "--database", "/data/edgechain.db", "--node-key", "/data/gateway.key", "--node-id", "gateway-01", "--quorum", "1", "--batch-size", "25", "--host", "0.0.0.0", "--port", "8000"]
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    cpus: 1.0
+    ports:
+      - "8000:8000"
+    volumes:
+      - gateway-data:/data
+    networks:
+      - edgechain-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
+
+  device-01:
+    <<: *device-common
+    environment:
+      <<: *device-environment
+      DEVICE_ID: iot-device-01
+    volumes:
+      - device-01-data:/data
+
+  device-02:
+    <<: *device-common
+    environment:
+      <<: *device-environment
+      DEVICE_ID: iot-device-02
+    volumes:
+      - device-02-data:/data
+
+  device-03:
+    <<: *device-common
+    environment:
+      <<: *device-environment
+      DEVICE_ID: iot-device-03
+    volumes:
+      - device-03-data:/data
+
+  device-04:
+    <<: *device-common
+    environment:
+      <<: *device-environment
+      DEVICE_ID: iot-device-04
+    volumes:
+      - device-04-data:/data
+
+  device-05:
+    <<: *device-common
+    environment:
+      <<: *device-environment
+      DEVICE_ID: iot-device-05
+    volumes:
+      - device-05-data:/data
+
+  device-06:
+    <<: *device-common
+    environment:
+      <<: *device-environment
+      DEVICE_ID: iot-device-06
+    volumes:
+      - device-06-data:/data
+
+  device-07:
+    <<: *device-common
+    environment:
+      <<: *device-environment
+      DEVICE_ID: iot-device-07
+    volumes:
+      - device-07-data:/data
+
+  device-08:
+    <<: *device-common
+    environment:
+      <<: *device-environment
+      DEVICE_ID: iot-device-08
+    volumes:
+      - device-08-data:/data
+
+  device-09:
+    <<: *device-common
+    environment:
+      <<: *device-environment
+      DEVICE_ID: iot-device-09
+    volumes:
+      - device-09-data:/data
+
+  device-10:
+    <<: *device-common
+    environment:
+      <<: *device-environment
+      DEVICE_ID: iot-device-10
+    volumes:
+      - device-10-data:/data
+
+  device-11:
+    <<: *device-common
+    environment:
+      <<: *device-environment
+      DEVICE_ID: iot-device-11
+    volumes:
+      - device-11-data:/data
+
+  device-12:
+    <<: *device-common
+    environment:
+      <<: *device-environment
+      DEVICE_ID: iot-device-12
+    volumes:
+      - device-12-data:/data
+
+  device-13:
+    <<: *device-common
+    environment:
+      <<: *device-environment
+      DEVICE_ID: iot-device-13
+    volumes:
+      - device-13-data:/data
+
+  device-14:
+    <<: *device-common
+    environment:
+      <<: *device-environment
+      DEVICE_ID: iot-device-14
+    volumes:
+      - device-14-data:/data
+
+  device-15:
+    <<: *device-common
+    environment:
+      <<: *device-environment
+      DEVICE_ID: iot-device-15
+    volumes:
+      - device-15-data:/data
+
+  device-16:
+    <<: *device-common
+    environment:
+      <<: *device-environment
+      DEVICE_ID: iot-device-16
+    volumes:
+      - device-16-data:/data
+
+  device-17:
+    <<: *device-common
+    environment:
+      <<: *device-environment
+      DEVICE_ID: iot-device-17
+    volumes:
+      - device-17-data:/data
+
+  device-18:
+    <<: *device-common
+    environment:
+      <<: *device-environment
+      DEVICE_ID: iot-device-18
+    volumes:
+      - device-18-data:/data
+
+  device-19:
+    <<: *device-common
+    environment:
+      <<: *device-environment
+      DEVICE_ID: iot-device-19
+    volumes:
+      - device-19-data:/data
+
+  device-20:
+    <<: *device-common
+    environment:
+      <<: *device-environment
+      DEVICE_ID: iot-device-20
+    volumes:
+      - device-20-data:/data
+
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["test"]
+    user: "${EDGECHAIN_UID:-1000}:${EDGECHAIN_GID:-1000}"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    command: ["edgechain-system-test", "--mode", "remote", "--base-url", "http://gateway:8000", "--expected-devices", "20", "--events-per-device", "8", "--result-dir", "/app/result", "--compose-file", "/app/docker-compose.yml"]
+    depends_on:
+      gateway:
+        condition: service_healthy
+    volumes:
+      - ./result:/app/result
+      - ./docker-compose.yml:/app/docker-compose.yml:ro
+    networks:
+      - edgechain-net
+
+networks:
+  edgechain-net:
+    name: edgechain-iot-net
+    driver: bridge
+    internal: true
+
+volumes:
+  gateway-data:
+  device-01-data:
+  device-02-data:
+  device-03-data:
+  device-04-data:
+  device-05-data:
+  device-06-data:
+  device-07-data:
+  device-08-data:
+  device-09-data:
+  device-10-data:
+  device-11-data:
+  device-12-data:
+  device-13-data:
+  device-14-data:
+  device-15-data:
+  device-16-data:
+  device-17-data:
+  device-18-data:
+  device-19-data:
+  device-20-data:

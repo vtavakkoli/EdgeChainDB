@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EdgeChainDB 20-Node IoT Validation Report</title>
+<style>
+:root{--bg:#f4f7fb;--card:#fff;--ink:#172033;--muted:#667085;--line:#dfe5ef;--ok:#067647;--bad:#b42318;--skip:#b54708;--accent:#3448c5}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,system-ui,Segoe UI,Arial,sans-serif}
+header{background:linear-gradient(120deg,#111827,#3448c5);color:white;padding:42px 5vw}
+header h1{margin:0 0 8px;font-size:34px} header p{margin:0;opacity:.82}
+main{max-width:1400px;margin:-20px auto 50px;padding:0 24px}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:0 8px 30px rgba(16,24,40,.06)}
+.metric strong{display:block;font-size:32px} .metric span{color:var(--muted)}
+.overall.pass strong,.pass{color:var(--ok)} .overall.fail strong,.fail{color:var(--bad)}
+h2{margin-top:0} table{width:100%;border-collapse:collapse} th,td{padding:12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top} th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+.badge{display:inline-block;border-radius:999px;padding:4px 9px;font-weight:700;font-size:12px;background:#eef2ff} .badge.pass{background:#ecfdf3} .badge.fail{background:#fef3f2} .badge.skip{background:#fffaeb;color:var(--skip)}
+code{font-size:12px;white-space:pre-wrap;word-break:break-word} details pre{white-space:pre-wrap;overflow:auto;background:#101828;color:#d0d5dd;padding:16px;border-radius:10px}
+.arch{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:center;gap:10px;text-align:center} .node{padding:18px;border-radius:12px;background:#eef2ff;border:1px solid #c7d2fe} .arrow{font-size:24px;color:var(--accent)}
+@media(max-width:900px){.grid{grid-template-columns:1fr 1fr}.arch{grid-template-columns:1fr}.arrow{transform:rotate(90deg)}table{display:block;overflow:auto}}
+</style>
+</head>
+<body>
+<header><h1>EdgeChainDB 20-Node IoT Validation Report</h1><p>Generated 2026-07-20T11:56:53.003895+00:00</p></header>
+<main>
+<section class="grid">
+  <div class="card metric overall pass"><span>Overall</span><strong>PASS</strong></div>
+  <div class="card metric"><span>Passed</span><strong>20</strong></div>
+  <div class="card metric"><span>Failed</span><strong>0</strong></div>
+  <div class="card metric"><span>Skipped</span><strong>0</strong></div>
+</section>
+<section class="card"><h2>Test topology</h2><div class="arch"><div class="node">20 isolated device containers<br><small>persistent Ed25519 identity + micro-chain</small></div><div class="arrow">→</div><div class="node">Private Docker bridge network<br><small>HTTP transport with retry-safe delivery</small></div><div class="arrow">→</div><div class="node">Gateway ledger<br><small>SQLite WAL + Merkle blocks + signatures</small></div></div></section>
+<br>
+<section class="card"><h2>Scenario results</h2><table><thead><tr><th>Status</th><th>Scenario</th><th>Duration</th><th>Evidence</th><th>Metrics</th></tr></thead><tbody>
+            <tr>
+              <td><span class="badge pass">PASS</span></td>
+              <td><strong>Docker Compose topology</strong><br><small>Deployment</small></td>
+              <td>8.6 ms</td>
+              <td>Compose defines an isolated gateway network and 20 persistent device nodes</td>
+              <td><code>{&quot;device_services&quot;: 20, &quot;unique_device_ids&quot;: 20}</code></td>
+            </tr>
+            
+            <tr>
+              <td><span class="badge pass">PASS</span></td>
+              <td><strong>Python test suite</strong><br><small>Unit and integration</small></td>
+              <td>5764.5 ms</td>
+              <td>The unit, API, tamper, idempotency, and 20-device tests passed</td>
+              <td><code>{&quot;pytest_summary&quot;: &quot;-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html&quot;}</code></td>
+            </tr>
+            
+            <tr>
+              <td><span class="badge pass">PASS</span></td>
+              <td><strong>Gateway health and readiness</strong><br><small>Availability</small></td>
+              <td>17.8 ms</td>
+              <td>Gateway returned a healthy status</td>
+              <td><code>{&quot;status&quot;: &quot;ok&quot;, &quot;node_id&quot;: &quot;local-gateway&quot;, &quot;devices&quot;: 0, &quot;events&quot;: 0, &quot;finalized_events&quot;: 0, &quot;pending_events&quot;: 0, &quot;blocks&quot;: 0, &quot;finalized_blocks&quot;: 0, &quot;open_proposal&quot;: null}</code></td>
+            </tr>
+            
+            <tr>
+              <td><span class="badge pass">PASS</span></td>
+              <td><strong>Twenty-node concurrent ingestion</strong><br><small>Scale and concurrency</small></td>
+              <td>2207.2 ms</td>
+              <td>20 nodes concurrently enrolled and delivered 160 signed events</td>
+              <td><code>{&quot;nodes&quot;: 20, &quot;events&quot;: 160, &quot;elapsed_seconds&quot;: 2.207, &quot;events_per_second&quot;: 72.5, &quot;latency_ms_median&quot;: 103.38, &quot;latency_ms_p95&quot;: 502.0}</code></td>
+            </tr>
+            
+            <tr>
+              <td><span class="badge pass">PASS</span></td>
+              <td><strong>Initial security-device enrollment</strong><br><small>Identity</small></td>
+              <td>16.3 ms</td>
+              <td>A new Ed25519 device identity was enrolled</td>
+              <td><code>{&quot;device_id&quot;: &quot;security-1bbc6b4e70&quot;, &quot;key_id&quot;: &quot;e12985dc3226db8c81453df7&quot;, &quot;created&quot;: true, &quot;last_sequence&quot;: 0, &quot;last_event_hash&quot;: &quot;0000000000000000000000000000000000000000000000000000000000000000&quot;}</code></td>
+            </tr>
+            
+            <tr>
+              <td><span class="badge pass">PASS</span></td>
+              <td><strong>Valid signed event</strong><br><small>Authenticity</small></td>
+              <td>16.5 ms</td>
+              <td>A correctly signed event was accepted</td>
+              <td><code>{&quot;accepted&quot;: true, &quot;duplicate&quot;: false, &quot;event_hash&quot;: &quot;f175636c77b22436af27ca0497d7d7352ec3a9e40a2ef59dd61b3b49c130fc36&quot;, &quot;device_id&quot;: &quot;security-1bbc6b4e70&quot;, &quot;sequence&quot;: 1}</code></td>
+            </tr>
+            
+            <tr>
+              <td><span class="badge pass">PASS</span></td>
+              <td><strong>Retry-safe duplicate delivery</strong><br><small>Network reliability</small></td>
+              <td>17.3 ms</td>
+              <td>The same signed event was accepted idempotently without a second row</td>
+              <td><code>{&quot;accepted&quot;: true, &quot;duplicate&quot;: true, &quot;event_hash&quot;: &quot;f175636c77b22436af27ca0497d7d7352ec3a9e40a2ef59dd61b3b49c130fc36&quot;, &quot;device_id&quot;: &quot;security-1bbc6b4e70&quot;, &quot;sequence&quot;: 1}</code></td>
+            </tr>
+            
+            <tr>
+              <td><span class="badge pass">PASS</span></td>
+              <td><strong>Idempotent same-key enrollment</strong><br><small>Container restart</small></td>
+              <td>16.4 ms</td>
+              <td>Restart-style enrollment with the same key was idempotent</td>
+              <td><code>{&quot;device_id&quot;: &quot;security-1bbc6b4e70&quot;, &quot;key_id&quot;: &quot;e12985dc3226db8c81453df7&quot;, &quot;created&quot;: false, &quot;last_sequence&quot;: 1, &quot;last_event_hash&quot;: &quot;f175636c77b22436af27ca0497d7d7352ec3a9e40a2ef59dd61b3b49c130fc36&quot;}</code></td>
+            </tr>
+            
+            <tr>
+              <td><span class="badge pass">PASS</span></td>
+              <td><strong>Conflicting key enrollment rejection</strong><br><small>Identity attack</small></td>
+              <td>14.8 ms</td>
+              <td>The gateway rejected takeover of an existing device id</td>
+              <td><code>{&quot;status_code&quot;: 400}</code></td>
+            </tr>
+            
+            <tr>
+              <td><span class="badge pass">PASS</span></td>
+              <td><strong>Forged signature rejection</strong><br><small>Cryptographic attack</small></td>
+              <td>18.7 ms</td>
+              <td>An event signed by an attacker key was rejected</td>
+              <td><code>{&quot;status_code&quot;: 400}</code></td>
+            </tr>
+            
+            <tr>
+              <td><span class="badge pass">PASS</span></td>
+              <td><strong>Payload tampering rejection</strong><br><small>Integrity attack</small></td>
+              <td>15.9 ms</td>
+              <td>Changing a signed payload invalidated its signature</td>
+              <td><code>{&quot;status_code&quot;: 400}</code></td>
+            </tr>
+            
+            <tr>
+              <td><span class="badge pass">PASS</span></td>
+              <td><strong>Out-of-order sequence rejection</strong><br><small>Replay and ordering</small></td>
+              <td>18.0 ms</td>
+              <td>A large sequence jump was rejected</td>
+              <td><code>{&quot;status_code&quot;: 400}</code></td>
+            </tr>
+            
+            <tr>
+              <td><span class="badge pass">PASS</span></td>
+              <td><strong>Broken micro-chain rejection</strong><br><small>Continuity</small></td>
+              <td>34.2 ms</td>
+              <td>A valid signature with the wrong predecessor was rejected</td>
+              <td><code>{&quot;status_code&quot;: 400}</code></td>
+            </tr>
+            
+            <tr>
+              <td><span class="badge pass">PASS</span></td>
+              <td><strong>Checkpoint recovery</strong><br><small>Crash recovery</small></td>
+              <td>39.2 ms</td>
+              <td>A restarted device resumed from the gateway checkpoint without forking</td>
+              <td><code>{&quot;accepted&quot;: true, &quot;duplicate&quot;: false, &quot;event_hash&quot;: &quot;c0c666b5db1194be4c60a0a8828414bd2171041a26e08dc5f299ecc720bf1b92&quot;, &quot;device_id&quot;: &quot;security-1bbc6b4e70&quot;, &quot;sequence&quot;: 2}</code></td>
+            </tr>
+            
+            <tr>
+              <td><span class="badge pass">PASS</span></td>
+              <td><strong>Seal remaining telemetry</strong><br><small>Finality</small></td>
+              <td>90.7 ms</td>
+              <td>All pending events were committed to finalized blocks</td>
+              <td><code>{&quot;manual_blocks_sealed&quot;: 1, &quot;node_id&quot;: &quot;local-gateway&quot;, &quot;devices&quot;: 21, &quot;events&quot;: 162, &quot;finalized_events&quot;: 162, &quot;pending_events&quot;: 0, &quot;blocks&quot;: 7, &quot;finalized_blocks&quot;: 7}</code></td>
+            </tr>
+            
+            <tr>
+              <td><span class="badge pass">PASS</span></td>
+              <td><strong>Block finality and quorum</strong><br><small>Consensus</small></td>
+              <td>30.8 ms</td>
+              <td>Every block is finalized and has the required signatures</td>
+              <td><code>{&quot;blocks&quot;: 7, &quot;events_in_blocks&quot;: 162}</code></td>
+            </tr>
+            
+            <tr>
+              <td><span class="badge pass">PASS</span></td>
+              <td><strong>Merkle inclusion proof</strong><br><small>Selective verification</small></td>
+              <td>18.2 ms</td>
+              <td>The selected event is cryptographically included in its block</td>
+              <td><code>{&quot;block_height&quot;: 7, &quot;proof_steps&quot;: 4}</code></td>
+            </tr>
+            
+            <tr>
+              <td><span class="badge pass">PASS</span></td>
+              <td><strong>Tampered Merkle proof rejection</strong><br><small>Integrity attack</small></td>
+              <td>0.0 ms</td>
+              <td>Changing the event hash invalidated the inclusion proof</td>
+              <td><code>{}</code></td>
+            </tr>
+            
+            <tr>
+              <td><span class="badge pass">PASS</span></td>
+              <td><strong>Complete ledger verification</strong><br><small>End-to-end audit</small></td>
+              <td>814.5 ms</td>
+              <td>All event signatures, micro-chains, Merkle roots, block links, and quorum signatures verified</td>
+              <td><code>{&quot;valid&quot;: true, &quot;errors&quot;: [], &quot;blocks&quot;: 7, &quot;events&quot;: 162, &quot;pending_events&quot;: 0}</code></td>
+            </tr>
+            
+            <tr>
+              <td><span class="badge pass">PASS</span></td>
+              <td><strong>Persistent restart recovery</strong><br><small>Durability</small></td>
+              <td>817.0 ms</td>
+              <td>Gateway restart preserved keys, blocks, events, and audit validity</td>
+              <td><code>{&quot;valid&quot;: true, &quot;errors&quot;: [], &quot;blocks&quot;: 7, &quot;events&quot;: 162, &quot;pending_events&quot;: 0}</code></td>
+            </tr>
+            </tbody></table></section>
+<br>
+<section class="grid" style="grid-template-columns:1fr 1fr"><section class="card"><h2>Environment</h2><table><tr><th>mode</th><td>local</td></tr><tr><th>python</th><td>3.13.5</td></tr><tr><th>platform</th><td>Linux-4.4.0-x86_64-with-glibc2.41</td></tr><tr><th>docker_cli_available</th><td>False</td></tr><tr><th>base_url</th><td>local uvicorn</td></tr><tr><th>expected_devices</th><td>20</td></tr><tr><th>events_per_device</th><td>8</td></tr></table></section><section class="card"><h2>Notes and limitations</h2><ul><li>Docker is not installed in the execution environment. The Compose file was validated structurally, while the same HTTP/API and persistence code was executed through a local 20-node integration harness.</li><li>Administrative enrollment is intentionally unauthenticated in this research testbed; production deployment must add mTLS or another authenticated control plane.</li></ul></section></section>
+<br><section class="card"><details><summary><strong>Raw machine-readable result</strong></summary><pre>{
+  &quot;title&quot;: &quot;EdgeChainDB 20-Node IoT Validation Report&quot;,
+  &quot;generated_at&quot;: &quot;2026-07-20T11:56:53.003895+00:00&quot;,
+  &quot;environment&quot;: {
+    &quot;mode&quot;: &quot;local&quot;,
+    &quot;python&quot;: &quot;3.13.5&quot;,
+    &quot;platform&quot;: &quot;Linux-4.4.0-x86_64-with-glibc2.41&quot;,
+    &quot;docker_cli_available&quot;: false,
+    &quot;base_url&quot;: &quot;local uvicorn&quot;,
+    &quot;expected_devices&quot;: 20,
+    &quot;events_per_device&quot;: 8
+  },
+  &quot;summary&quot;: {
+    &quot;passed&quot;: 20,
+    &quot;failed&quot;: 0,
+    &quot;skipped&quot;: 0,
+    &quot;total&quot;: 20
+  },
+  &quot;scenarios&quot;: [
+    {
+      &quot;name&quot;: &quot;Docker Compose topology&quot;,
+      &quot;category&quot;: &quot;Deployment&quot;,
+      &quot;status&quot;: &quot;PASS&quot;,
+      &quot;duration_ms&quot;: 8.557987999893157,
+      &quot;details&quot;: &quot;Compose defines an isolated gateway network and 20 persistent device nodes&quot;,
+      &quot;metrics&quot;: {
+        &quot;device_services&quot;: 20,
+        &quot;unique_device_ids&quot;: 20
+      }
+    },
+    {
+      &quot;name&quot;: &quot;Python test suite&quot;,
+      &quot;category&quot;: &quot;Unit and integration&quot;,
+      &quot;status&quot;: &quot;PASS&quot;,
+      &quot;duration_ms&quot;: 5764.508591999856,
+      &quot;details&quot;: &quot;The unit, API, tamper, idempotency, and 20-device tests passed&quot;,
+      &quot;metrics&quot;: {
+        &quot;pytest_summary&quot;: &quot;-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html&quot;
+      }
+    },
+    {
+      &quot;name&quot;: &quot;Gateway health and readiness&quot;,
+      &quot;category&quot;: &quot;Availability&quot;,
+      &quot;status&quot;: &quot;PASS&quot;,
+      &quot;duration_ms&quot;: 17.79222799996205,
+      &quot;details&quot;: &quot;Gateway returned a healthy status&quot;,
+      &quot;metrics&quot;: {
+        &quot;status&quot;: &quot;ok&quot;,
+        &quot;node_id&quot;: &quot;local-gateway&quot;,
+        &quot;devices&quot;: 0,
+        &quot;events&quot;: 0,
+        &quot;finalized_events&quot;: 0,
+        &quot;pending_events&quot;: 0,
+        &quot;blocks&quot;: 0,
+        &quot;finalized_blocks&quot;: 0,
+        &quot;open_proposal&quot;: null
+      }
+    },
+    {
+      &quot;name&quot;: &quot;Twenty-node concurrent ingestion&quot;,
+      &quot;category&quot;: &quot;Scale and concurrency&quot;,
+      &quot;status&quot;: &quot;PASS&quot;,
+      &quot;duration_ms&quot;: 2207.167095999921,
+      &quot;details&quot;: &quot;20 nodes concurrently enrolled and delivered 160 signed events&quot;,
+      &quot;metrics&quot;: {
+        &quot;nodes&quot;: 20,
+        &quot;events&quot;: 160,
+        &quot;elapsed_seconds&quot;: 2.207,
+        &quot;events_per_second&quot;: 72.5,
+        &quot;latency_ms_median&quot;: 103.38,
+        &quot;latency_ms_p95&quot;: 502.0
+      }
+    },
+    {
+      &quot;name&quot;: &quot;Initial security-device enrollment&quot;,
+      &quot;category&quot;: &quot;Identity&quot;,
+      &quot;status&quot;: &quot;PASS&quot;,
+      &quot;duration_ms&quot;: 16.33988399998998,
+      &quot;details&quot;: &quot;A new Ed25519 device identity was enrolled&quot;,
+      &quot;metrics&quot;: {
+        &quot;device_id&quot;: &quot;security-1bbc6b4e70&quot;,
+        &quot;key_id&quot;: &quot;e12985dc3226db8c81453df7&quot;,
+        &quot;created&quot;: true,
+        &quot;last_sequence&quot;: 0,
+        &quot;last_event_hash&quot;: &quot;0000000000000000000000000000000000000000000000000000000000000000&quot;
+      }
+    },
+    {
+      &quot;name&quot;: &quot;Valid signed event&quot;,
+      &quot;category&quot;: &quot;Authenticity&quot;,
+      &quot;status&quot;: &quot;PASS&quot;,
+      &quot;duration_ms&quot;: 16.452339000124994,
+      &quot;details&quot;: &quot;A correctly signed event was accepted&quot;,
+      &quot;metrics&quot;: {
+        &quot;accepted&quot;: true,
+        &quot;duplicate&quot;: false,
+        &quot;event_hash&quot;: &quot;f175636c77b22436af27ca0497d7d7352ec3a9e40a2ef59dd61b3b49c130fc36&quot;,
+        &quot;device_id&quot;: &quot;security-1bbc6b4e70&quot;,
+        &quot;sequence&quot;: 1
+      }
+    },
+    {
+      &quot;name&quot;: &quot;Retry-safe duplicate delivery&quot;,
+      &quot;category&quot;: &quot;Network reliability&quot;,
+      &quot;status&quot;: &quot;PASS&quot;,
+      &quot;duration_ms&quot;: 17.295590000003358,
+      &quot;details&quot;: &quot;The same signed event was accepted idempotently without a second row&quot;,
+      &quot;metrics&quot;: {
+        &quot;accepted&quot;: true,
+        &quot;duplicate&quot;: true,
+        &quot;event_hash&quot;: &quot;f175636c77b22436af27ca0497d7d7352ec3a9e40a2ef59dd61b3b49c130fc36&quot;,
+        &quot;device_id&quot;: &quot;security-1bbc6b4e70&quot;,
+        &quot;sequence&quot;: 1
+      }
+    },
+    {
+      &quot;name&quot;: &quot;Idempotent same-key enrollment&quot;,
+      &quot;category&quot;: &quot;Container restart&quot;,
+      &quot;status&quot;: &quot;PASS&quot;,
+      &quot;duration_ms&quot;: 16.40503799990256,
+      &quot;details&quot;: &quot;Restart-style enrollment with the same key was idempotent&quot;,
+      &quot;metrics&quot;: {
+        &quot;device_id&quot;: &quot;security-1bbc6b4e70&quot;,
+        &quot;key_id&quot;: &quot;e12985dc3226db8c81453df7&quot;,
+        &quot;created&quot;: false,
+        &quot;last_sequence&quot;: 1,
+        &quot;last_event_hash&quot;: &quot;f175636c77b22436af27ca0497d7d7352ec3a9e40a2ef59dd61b3b49c130fc36&quot;
+      }
+    },
+    {
+      &quot;name&quot;: &quot;Conflicting key enrollment rejection&quot;,
+      &quot;category&quot;: &quot;Identity attack&quot;,
+      &quot;status&quot;: &quot;PASS&quot;,
+      &quot;duration_ms&quot;: 14.817471000014848,
+      &quot;details&quot;: &quot;The gateway rejected takeover of an existing device id&quot;,
+      &quot;metrics&quot;: {
+        &quot;status_code&quot;: 400
+      }
+    },
+    {
+      &quot;name&quot;: &quot;Forged signature rejection&quot;,
+      &quot;category&quot;: &quot;Cryptographic attack&quot;,
+      &quot;status&quot;: &quot;PASS&quot;,
+      &quot;duration_ms&quot;: 18.67514800005665,
+      &quot;details&quot;: &quot;An event signed by an attacker key was rejected&quot;,
+      &quot;metrics&quot;: {
+        &quot;status_code&quot;: 400
+      }
+    },
+    {
+      &quot;name&quot;: &quot;Payload tampering rejection&quot;,
+      &quot;category&quot;: &quot;Integrity attack&quot;,
+      &quot;status&quot;: &quot;PASS&quot;,
+      &quot;duration_ms&quot;: 15.94079800020154,
+      &quot;details&quot;: &quot;Changing a signed payload invalidated its signature&quot;,
+      &quot;metrics&quot;: {
+        &quot;status_code&quot;: 400
+      }
+    },
+    {
+      &quot;name&quot;: &quot;Out-of-order sequence rejection&quot;,
+      &quot;category&quot;: &quot;Replay and ordering&quot;,
+      &quot;status&quot;: &quot;PASS&quot;,
+      &quot;duration_ms&quot;: 18.015833999925235,
+      &quot;details&quot;: &quot;A large sequence jump was rejected&quot;,
+      &quot;metrics&quot;: {
+        &quot;status_code&quot;: 400
+      }
+    },
+    {
+      &quot;name&quot;: &quot;Broken micro-chain rejection&quot;,
+      &quot;category&quot;: &quot;Continuity&quot;,
+      &quot;status&quot;: &quot;PASS&quot;,
+      &quot;duration_ms&quot;: 34.22699500015369,
+      &quot;details&quot;: &quot;A valid signature with the wrong predecessor was rejected&quot;,
+      &quot;metrics&quot;: {
+        &quot;status_code&quot;: 400
+      }
+    },
+    {
+      &quot;name&quot;: &quot;Checkpoint recovery&quot;,
+      &quot;category&quot;: &quot;Crash recovery&quot;,
+      &quot;status&quot;: &quot;PASS&quot;,
+      &quot;duration_ms&quot;: 39.213452000012694,
+      &quot;details&quot;: &quot;A restarted device resumed from the gateway checkpoint without forking&quot;,
+      &quot;metrics&quot;: {
+        &quot;accepted&quot;: true,
+        &quot;duplicate&quot;: false,
+        &quot;event_hash&quot;: &quot;c0c666b5db1194be4c60a0a8828414bd2171041a26e08dc5f299ecc720bf1b92&quot;,
+        &quot;device_id&quot;: &quot;security-1bbc6b4e70&quot;,
+        &quot;sequence&quot;: 2
+      }
+    },
+    {
+      &quot;name&quot;: &quot;Seal remaining telemetry&quot;,
+      &quot;category&quot;: &quot;Finality&quot;,
+      &quot;status&quot;: &quot;PASS&quot;,
+      &quot;duration_ms&quot;: 90.68955699990511,
+      &quot;details&quot;: &quot;All pending events were committed to finalized blocks&quot;,
+      &quot;metrics&quot;: {
+        &quot;manual_blocks_sealed&quot;: 1,
+        &quot;node_id&quot;: &quot;local-gateway&quot;,
+        &quot;devices&quot;: 21,
+        &quot;events&quot;: 162,
+        &quot;finalized_events&quot;: 162,
+        &quot;pending_events&quot;: 0,
+        &quot;blocks&quot;: 7,
+        &quot;finalized_blocks&quot;: 7
+      }
+    },
+    {
+      &quot;name&quot;: &quot;Block finality and quorum&quot;,
+      &quot;category&quot;: &quot;Consensus&quot;,
+      &quot;status&quot;: &quot;PASS&quot;,
+      &quot;duration_ms&quot;: 30.81356299981053,
+      &quot;details&quot;: &quot;Every block is finalized and has the required signatures&quot;,
+      &quot;metrics&quot;: {
+        &quot;blocks&quot;: 7,
+        &quot;events_in_blocks&quot;: 162
+      }
+    },
+    {
+      &quot;name&quot;: &quot;Merkle inclusion proof&quot;,
+      &quot;category&quot;: &quot;Selective verification&quot;,
+      &quot;status&quot;: &quot;PASS&quot;,
+      &quot;duration_ms&quot;: 18.17991699999766,
+      &quot;details&quot;: &quot;The selected event is cryptographically included in its block&quot;,
+      &quot;metrics&quot;: {
+        &quot;block_height&quot;: 7,
+        &quot;proof_steps&quot;: 4
+      }
+    },
+    {
+      &quot;name&quot;: &quot;Tampered Merkle proof rejection&quot;,
+      &quot;category&quot;: &quot;Integrity attack&quot;,
+      &quot;status&quot;: &quot;PASS&quot;,
+      &quot;duration_ms&quot;: 0.04596899998432491,
+      &quot;details&quot;: &quot;Changing the event hash invalidated the inclusion proof&quot;,
+      &quot;metrics&quot;: {}
+    },
+    {
+      &quot;name&quot;: &quot;Complete ledger verification&quot;,
+      &quot;category&quot;: &quot;End-to-end audit&quot;,
+      &quot;status&quot;: &quot;PASS&quot;,
+      &quot;duration_ms&quot;: 814.5365899999888,
+      &quot;details&quot;: &quot;All event signatures, micro-chains, Merkle roots, block links, and quorum signatures verified&quot;,
+      &quot;metrics&quot;: {
+        &quot;valid&quot;: true,
+        &quot;errors&quot;: [],
+        &quot;blocks&quot;: 7,
+        &quot;events&quot;: 162,
+        &quot;pending_events&quot;: 0
+      }
+    },
+    {
+      &quot;name&quot;: &quot;Persistent restart recovery&quot;,
+      &quot;category&quot;: &quot;Durability&quot;,
+      &quot;status&quot;: &quot;PASS&quot;,
+      &quot;duration_ms&quot;: 817.0028199999706,
+      &quot;details&quot;: &quot;Gateway restart preserved keys, blocks, events, and audit validity&quot;,
+      &quot;metrics&quot;: {
+        &quot;valid&quot;: true,
+        &quot;errors&quot;: [],
+        &quot;blocks&quot;: 7,
+        &quot;events&quot;: 162,
+        &quot;pending_events&quot;: 0
+      }
+    }
+  ],
+  &quot;notes&quot;: [
+    &quot;Docker is not installed in the execution environment. The Compose file was validated structurally, while the same HTTP/API and persistence code was executed through a local 20-node integration harness.&quot;,
+    &quot;Administrative enrollment is intentionally unauthenticated in this research testbed; production deployment must add mTLS or another authenticated control plane.&quot;
+  ],
+  &quot;extra&quot;: {
+    &quot;final_stats&quot;: {}
+  }
+}</pre></details></section>
+</main></body></html>

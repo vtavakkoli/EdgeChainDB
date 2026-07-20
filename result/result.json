@@ -1,0 +1,277 @@
+{
+  "title": "EdgeChainDB 20-Node IoT Validation Report",
+  "generated_at": "2026-07-20T11:56:53.003895+00:00",
+  "environment": {
+    "mode": "local",
+    "python": "3.13.5",
+    "platform": "Linux-4.4.0-x86_64-with-glibc2.41",
+    "docker_cli_available": false,
+    "base_url": "local uvicorn",
+    "expected_devices": 20,
+    "events_per_device": 8
+  },
+  "summary": {
+    "passed": 20,
+    "failed": 0,
+    "skipped": 0,
+    "total": 20
+  },
+  "scenarios": [
+    {
+      "name": "Docker Compose topology",
+      "category": "Deployment",
+      "status": "PASS",
+      "duration_ms": 8.557987999893157,
+      "details": "Compose defines an isolated gateway network and 20 persistent device nodes",
+      "metrics": {
+        "device_services": 20,
+        "unique_device_ids": 20
+      }
+    },
+    {
+      "name": "Python test suite",
+      "category": "Unit and integration",
+      "status": "PASS",
+      "duration_ms": 5764.508591999856,
+      "details": "The unit, API, tamper, idempotency, and 20-device tests passed",
+      "metrics": {
+        "pytest_summary": "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html"
+      }
+    },
+    {
+      "name": "Gateway health and readiness",
+      "category": "Availability",
+      "status": "PASS",
+      "duration_ms": 17.79222799996205,
+      "details": "Gateway returned a healthy status",
+      "metrics": {
+        "status": "ok",
+        "node_id": "local-gateway",
+        "devices": 0,
+        "events": 0,
+        "finalized_events": 0,
+        "pending_events": 0,
+        "blocks": 0,
+        "finalized_blocks": 0,
+        "open_proposal": null
+      }
+    },
+    {
+      "name": "Twenty-node concurrent ingestion",
+      "category": "Scale and concurrency",
+      "status": "PASS",
+      "duration_ms": 2207.167095999921,
+      "details": "20 nodes concurrently enrolled and delivered 160 signed events",
+      "metrics": {
+        "nodes": 20,
+        "events": 160,
+        "elapsed_seconds": 2.207,
+        "events_per_second": 72.5,
+        "latency_ms_median": 103.38,
+        "latency_ms_p95": 502.0
+      }
+    },
+    {
+      "name": "Initial security-device enrollment",
+      "category": "Identity",
+      "status": "PASS",
+      "duration_ms": 16.33988399998998,
+      "details": "A new Ed25519 device identity was enrolled",
+      "metrics": {
+        "device_id": "security-1bbc6b4e70",
+        "key_id": "e12985dc3226db8c81453df7",
+        "created": true,
+        "last_sequence": 0,
+        "last_event_hash": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "name": "Valid signed event",
+      "category": "Authenticity",
+      "status": "PASS",
+      "duration_ms": 16.452339000124994,
+      "details": "A correctly signed event was accepted",
+      "metrics": {
+        "accepted": true,
+        "duplicate": false,
+        "event_hash": "f175636c77b22436af27ca0497d7d7352ec3a9e40a2ef59dd61b3b49c130fc36",
+        "device_id": "security-1bbc6b4e70",
+        "sequence": 1
+      }
+    },
+    {
+      "name": "Retry-safe duplicate delivery",
+      "category": "Network reliability",
+      "status": "PASS",
+      "duration_ms": 17.295590000003358,
+      "details": "The same signed event was accepted idempotently without a second row",
+      "metrics": {
+        "accepted": true,
+        "duplicate": true,
+        "event_hash": "f175636c77b22436af27ca0497d7d7352ec3a9e40a2ef59dd61b3b49c130fc36",
+        "device_id": "security-1bbc6b4e70",
+        "sequence": 1
+      }
+    },
+    {
+      "name": "Idempotent same-key enrollment",
+      "category": "Container restart",
+      "status": "PASS",
+      "duration_ms": 16.40503799990256,
+      "details": "Restart-style enrollment with the same key was idempotent",
+      "metrics": {
+        "device_id": "security-1bbc6b4e70",
+        "key_id": "e12985dc3226db8c81453df7",
+        "created": false,
+        "last_sequence": 1,
+        "last_event_hash": "f175636c77b22436af27ca0497d7d7352ec3a9e40a2ef59dd61b3b49c130fc36"
+      }
+    },
+    {
+      "name": "Conflicting key enrollment rejection",
+      "category": "Identity attack",
+      "status": "PASS",
+      "duration_ms": 14.817471000014848,
+      "details": "The gateway rejected takeover of an existing device id",
+      "metrics": {
+        "status_code": 400
+      }
+    },
+    {
+      "name": "Forged signature rejection",
+      "category": "Cryptographic attack",
+      "status": "PASS",
+      "duration_ms": 18.67514800005665,
+      "details": "An event signed by an attacker key was rejected",
+      "metrics": {
+        "status_code": 400
+      }
+    },
+    {
+      "name": "Payload tampering rejection",
+      "category": "Integrity attack",
+      "status": "PASS",
+      "duration_ms": 15.94079800020154,
+      "details": "Changing a signed payload invalidated its signature",
+      "metrics": {
+        "status_code": 400
+      }
+    },
+    {
+      "name": "Out-of-order sequence rejection",
+      "category": "Replay and ordering",
+      "status": "PASS",
+      "duration_ms": 18.015833999925235,
+      "details": "A large sequence jump was rejected",
+      "metrics": {
+        "status_code": 400
+      }
+    },
+    {
+      "name": "Broken micro-chain rejection",
+      "category": "Continuity",
+      "status": "PASS",
+      "duration_ms": 34.22699500015369,
+      "details": "A valid signature with the wrong predecessor was rejected",
+      "metrics": {
+        "status_code": 400
+      }
+    },
+    {
+      "name": "Checkpoint recovery",
+      "category": "Crash recovery",
+      "status": "PASS",
+      "duration_ms": 39.213452000012694,
+      "details": "A restarted device resumed from the gateway checkpoint without forking",
+      "metrics": {
+        "accepted": true,
+        "duplicate": false,
+        "event_hash": "c0c666b5db1194be4c60a0a8828414bd2171041a26e08dc5f299ecc720bf1b92",
+        "device_id": "security-1bbc6b4e70",
+        "sequence": 2
+      }
+    },
+    {
+      "name": "Seal remaining telemetry",
+      "category": "Finality",
+      "status": "PASS",
+      "duration_ms": 90.68955699990511,
+      "details": "All pending events were committed to finalized blocks",
+      "metrics": {
+        "manual_blocks_sealed": 1,
+        "node_id": "local-gateway",
+        "devices": 21,
+        "events": 162,
+        "finalized_events": 162,
+        "pending_events": 0,
+        "blocks": 7,
+        "finalized_blocks": 7
+      }
+    },
+    {
+      "name": "Block finality and quorum",
+      "category": "Consensus",
+      "status": "PASS",
+      "duration_ms": 30.81356299981053,
+      "details": "Every block is finalized and has the required signatures",
+      "metrics": {
+        "blocks": 7,
+        "events_in_blocks": 162
+      }
+    },
+    {
+      "name": "Merkle inclusion proof",
+      "category": "Selective verification",
+      "status": "PASS",
+      "duration_ms": 18.17991699999766,
+      "details": "The selected event is cryptographically included in its block",
+      "metrics": {
+        "block_height": 7,
+        "proof_steps": 4
+      }
+    },
+    {
+      "name": "Tampered Merkle proof rejection",
+      "category": "Integrity attack",
+      "status": "PASS",
+      "duration_ms": 0.04596899998432491,
+      "details": "Changing the event hash invalidated the inclusion proof",
+      "metrics": {}
+    },
+    {
+      "name": "Complete ledger verification",
+      "category": "End-to-end audit",
+      "status": "PASS",
+      "duration_ms": 814.5365899999888,
+      "details": "All event signatures, micro-chains, Merkle roots, block links, and quorum signatures verified",
+      "metrics": {
+        "valid": true,
+        "errors": [],
+        "blocks": 7,
+        "events": 162,
+        "pending_events": 0
+      }
+    },
+    {
+      "name": "Persistent restart recovery",
+      "category": "Durability",
+      "status": "PASS",
+      "duration_ms": 817.0028199999706,
+      "details": "Gateway restart preserved keys, blocks, events, and audit validity",
+      "metrics": {
+        "valid": true,
+        "errors": [],
+        "blocks": 7,
+        "events": 162,
+        "pending_events": 0
+      }
+    }
+  ],
+  "notes": [
+    "Docker is not installed in the execution environment. The Compose file was validated structurally, while the same HTTP/API and persistence code was executed through a local 20-node integration harness.",
+    "Administrative enrollment is intentionally unauthenticated in this research testbed; production deployment must add mTLS or another authenticated control plane."
+  ],
+  "extra": {
+    "final_stats": {}
+  }
+}

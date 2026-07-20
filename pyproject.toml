@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "edgechaindb"
+version = "0.2.0"
+description = "An edge-first, quorum-signed blockchain database for IoT telemetry"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{name = "Vahid Tavakkoli"}]
+dependencies = [
+  "cbor2>=5.6",
+  "cryptography>=44",
+  "fastapi>=0.115",
+  "pydantic>=2.10",
+  "uvicorn>=0.34",
+  "httpx>=0.28",
+  "PyYAML>=6.0"
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+edgechain-demo = "edgechaindb.simulator:main"
+edgechain-verify = "edgechaindb.cli:verify_main"
+edgechain-api = "edgechaindb.cli:api_main"
+edgechain-device = "edgechaindb.device_node:main"
+edgechain-system-test = "edgechaindb.system_test:main"
+edgechain-recovery-check = "edgechaindb.recovery_report:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.setuptools.packages.find]
+include = ["edgechaindb*"]
+exclude = ["tests*", "result*", "scripts*"]
