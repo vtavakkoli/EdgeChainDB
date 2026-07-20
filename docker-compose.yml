@@ -8,10 +8,11 @@ x-json-logging: &json-logging
       max-file: "5"
 
 x-device-common: &device-common
+  image: edgechaindb:0.6.0
   build:
     context: .
     dockerfile: Dockerfile
-  command: ["edgechain-device", "--continuous"]
+  command: ["python", "-m", "edgechaindb.device_node", "--continuous"]
   restart: unless-stopped
   <<: *json-logging
   read_only: true
@@ -44,14 +45,16 @@ x-device-common: &device-common
     DEVICE_MAX_RETRIES: "40"
     DEVICE_REQUEST_TIMEOUT: "10"
     DEVICE_CONTINUOUS: "1"
+    DEVICE_MAX_BUFFERED_EVENTS: "10000"
     EDGECHAIN_LOG_LEVEL: INFO
 
 services:
   gateway:
+    image: edgechaindb:0.6.0
     build:
       context: .
       dockerfile: Dockerfile
-    command: ["edgechain-gateway", "--database", "/data/edgechain.db", "--node-key", "/data/gateway.key", "--node-id", "gateway-01", "--quorum", "1", "--batch-size", "25", "--host", "0.0.0.0", "--api-port", "8000", "--monitor-port", "3030"]
+    command: ["python", "-m", "edgechaindb.gateway_server", "--database", "/data/edgechain.db", "--node-key", "/data/gateway.key", "--node-id", "gateway-01", "--quorum", "1", "--batch-size", "25", "--host", "0.0.0.0", "--api-port", "8000", "--monitor-port", "3030"]
     user: "0:0"
     restart: unless-stopped
     <<: *json-logging
@@ -254,10 +257,11 @@ services:
       - device-20-data:/data
 
   run:
+    image: edgechaindb:0.6.0
     build:
       context: .
       dockerfile: Dockerfile
-    command: ["edgechain-cluster-runtime"]
+    command: ["python", "-m", "edgechaindb.cluster_runtime"]
     restart: unless-stopped
     <<: *json-logging
     read_only: true
@@ -324,12 +328,13 @@ services:
       start_period: 5s
 
   test:
+    image: edgechaindb:0.6.0
     build:
       context: .
       dockerfile: Dockerfile
     profiles: ["test"]
     user: "0:0"
-    command: ["edgechain-benchmark", "--base-url", "http://gateway:8000", "--expected-devices", "20", "--events-per-device", "8", "--result-dir", "/app/result", "--compose-file", "/app/docker-compose.yml", "--project-root", "/app"]
+    command: ["python", "-m", "edgechaindb.benchmark", "--base-url", "http://gateway:8000", "--expected-devices", "20", "--events-per-device", "8", "--result-dir", "/app/result", "--compose-file", "/app/docker-compose.yml", "--project-root", "/app"]
     restart: "no"
     <<: *json-logging
     cap_drop:

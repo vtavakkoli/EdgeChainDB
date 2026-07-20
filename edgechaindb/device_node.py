@@ -14,6 +14,7 @@ import httpx
 from .crypto import KeyPair, key_id
 from .device import DeviceClient
 from .observability import get_logger
+from .outbox import DurableOutbox
 
 
 class DeviceStateError(RuntimeError):
@@ -115,6 +116,72 @@ def submit_with_retry(
     raise RuntimeError(f"event submission failed after retries: {last_error}")
 
 
+def _sync_and_flush(
+    *,
+    client: httpx.Client,
+    device_id: str,
+    key: KeyPair,
+    client_state: DeviceClient,
+    local_state: dict[str, Any],
+    state_path: Path,
+    outbox: DurableOutbox,
+    retries: int,
+    logger: Any,
+) -> int:
+    """Enroll, reconcile the durable outbox, and deliver pending events."""
+
+    wait_for_gateway(client, retries, 0.2, logger=logger)
+    enrollment = client.post(
+        "/devices",
+        json={"device_id": device_id, "public_key": key.public_bytes.hex()},
+    )
+    enrollment.raise_for_status()
+    checkpoint_response = client.get(f"/devices/{device_id}/checkpoint")
+    checkpoint_response.raise_for_status()
+    checkpoint = checkpoint_response.json()
+    server_sequence = int(checkpoint["last_sequence"])
+    server_hash = str(checkpoint["last_event_hash"])
+    local_sequence = int(local_state.get("sequence", 0))
+
+    if server_sequence > local_sequence:
+        raise DeviceStateError(
+            "gateway checkpoint is ahead of local durable state; refusing an unsafe rollback"
+        )
+    outbox.reconcile(server_sequence)
+    if local_sequence > server_sequence and not outbox.items():
+        raise DeviceStateError(
+            "local state is ahead of the gateway but the durable outbox is empty"
+        )
+    if local_sequence == server_sequence:
+        local_state.update(
+            {"sequence": server_sequence, "previous_event_hash": server_hash}
+        )
+        _atomic_json(state_path, local_state)
+        client_state.restore(server_sequence, bytes.fromhex(server_hash))
+
+    delivered = 0
+    for wire in outbox.items():
+        result = submit_with_retry(client, wire, retries, 0.2, logger=logger)
+        if not result.get("accepted"):
+            raise RuntimeError(f"gateway did not accept buffered event: {result}")
+        outbox.acknowledge(int(wire["sequence"]))
+        delivered += 1
+        logger.info(
+            "offline_event_replayed",
+            sequence=wire["sequence"],
+            duplicate=result.get("duplicate", False),
+            remaining_buffered_events=len(outbox),
+        )
+    logger.info(
+        "device_gateway_synchronized",
+        created=enrollment.json().get("created"),
+        gateway_sequence=server_sequence,
+        local_sequence=local_sequence,
+        buffered_events_delivered=delivered,
+    )
+    return delivered
+
+
 def run_device(
     *,
     device_id: str,
@@ -126,6 +193,7 @@ def run_device(
     request_timeout: float,
     retries: int,
     continuous: bool,
+    max_buffered_events: int = 10_000,
 ) -> dict[str, Any]:
     logger = get_logger(device_id)
     started = time.perf_counter()
@@ -141,6 +209,7 @@ def run_device(
         startup_jitter_ms=round(jitter_ms, 3),
         request_timeout=request_timeout,
         retries=retries,
+        max_buffered_events=max_buffered_events,
     )
     if jitter_ms:
         time.sleep(jitter_ms / 1000.0)
@@ -150,68 +219,100 @@ def run_device(
     key_existed = key_path.exists()
     key = KeyPair.load_or_create(key_path)
     state_path = state_dir / "state.json"
-    local_state = {"sequence": 0, "previous_event_hash": "00" * 32}
+    outbox = DurableOutbox(state_dir / "outbox.json")
+    local_state: dict[str, Any] = {
+        "sequence": 0,
+        "previous_event_hash": "00" * 32,
+    }
     if state_path.exists():
         local_state = json.loads(state_path.read_text(encoding="utf-8"))
+
+    latest_buffered = outbox.latest()
+    if latest_buffered and int(latest_buffered["sequence"]) > int(local_state.get("sequence", 0)):
+        # Recover the narrow crash window between durable outbox append and state-file update.
+        local_state = {
+            "sequence": int(latest_buffered["sequence"]),
+            "previous_event_hash": str(latest_buffered["event_hash"]),
+        }
+        _atomic_json(state_path, local_state)
+
     logger.info(
         "device_identity_loaded",
         device_id=device_id,
         key_id=key_id(key.public_bytes),
         existing_key=key_existed,
         local_sequence=int(local_state.get("sequence", 0)),
+        buffered_events=len(outbox),
     )
 
-    sent = 0
+    generated = 0
+    delivered = 0
     client_state = DeviceClient(device_id, key)
+    client_state.restore(
+        int(local_state.get("sequence", 0)),
+        bytes.fromhex(str(local_state.get("previous_event_hash", "00" * 32))),
+    )
     try:
         with httpx.Client(base_url=gateway_url, timeout=request_timeout) as client:
-            wait_for_gateway(client, retries, 0.25, logger=logger)
-            enrollment = client.post(
-                "/devices",
-                json={"device_id": device_id, "public_key": key.public_bytes.hex()},
-            )
-            enrollment.raise_for_status()
-            enrollment_data = enrollment.json()
-            logger.info(
-                "device_enrollment_completed",
-                device_id=device_id,
-                created=enrollment_data.get("created"),
-                gateway_sequence=enrollment_data.get("last_sequence"),
-            )
-
-            checkpoint_response = client.get(f"/devices/{device_id}/checkpoint")
-            checkpoint_response.raise_for_status()
-            checkpoint = checkpoint_response.json()
-            server_sequence = int(checkpoint["last_sequence"])
-            server_hash = str(checkpoint["last_event_hash"])
-            local_sequence = int(local_state.get("sequence", 0))
-
-            if local_sequence > server_sequence:
-                logger.error(
-                    "device_state_ahead_of_gateway",
-                    local_sequence=local_sequence,
-                    gateway_sequence=server_sequence,
+            try:
+                delivered += _sync_and_flush(
+                    client=client,
+                    device_id=device_id,
+                    key=key,
+                    client_state=client_state,
+                    local_state=local_state,
+                    state_path=state_path,
+                    outbox=outbox,
+                    retries=retries if not continuous else min(retries, 3),
+                    logger=logger,
                 )
-                raise DeviceStateError(
-                    "local device state is ahead of the gateway; refusing to fork the chain"
+            except Exception as exc:
+                if not continuous:
+                    raise
+                logger.warning(
+                    "device_entered_offline_mode",
+                    error=f"{type(exc).__name__}: {exc}",
+                    buffered_events=len(outbox),
                 )
 
-            client_state.restore(server_sequence, bytes.fromhex(server_hash))
-            _atomic_json(
-                state_path,
-                {"sequence": server_sequence, "previous_event_hash": server_hash},
-            )
-            logger.info(
-                "checkpoint_synchronized",
-                local_sequence_before=local_sequence,
-                gateway_sequence=server_sequence,
-                repaired=local_sequence != server_sequence,
-                previous_event_hash=server_hash,
-            )
-
-            while ((continuous and not _shutdown_requested) or sent < events):
+            while ((continuous and not _shutdown_requested) or generated < events):
                 if _shutdown_requested:
                     break
+
+                # Reconnect and flush before generating more data when possible.
+                if len(outbox):
+                    try:
+                        delivered += _sync_and_flush(
+                            client=client,
+                            device_id=device_id,
+                            key=key,
+                            client_state=client_state,
+                            local_state=local_state,
+                            state_path=state_path,
+                            outbox=outbox,
+                            retries=1 if continuous else retries,
+                            logger=logger,
+                        )
+                    except (RuntimeError, httpx.HTTPError, DeviceStateError) as exc:
+                        logger.warning(
+                            "offline_flush_deferred",
+                            error=f"{type(exc).__name__}: {exc}",
+                            buffered_events=len(outbox),
+                        )
+                        if not continuous:
+                            raise
+
+                if len(outbox) >= max_buffered_events:
+                    logger.error(
+                        "offline_buffer_full",
+                        buffered_events=len(outbox),
+                        max_buffered_events=max_buffered_events,
+                    )
+                    if not continuous:
+                        raise RuntimeError("offline buffer is full")
+                    time.sleep(max(interval_ms / 1000.0, 0.25))
+                    continue
+
                 sensor_index = (
                     int(device_id.rsplit("-", 1)[-1]) if "-" in device_id else 0
                 )
@@ -224,43 +325,53 @@ def run_device(
                     "quality": 100,
                 }
                 event = client_state.create_event("environment", payload)
+                wire = event.to_wire()
+                outbox.append(wire)
+                local_state = {
+                    "sequence": event.sequence,
+                    "previous_event_hash": event.event_hash.hex(),
+                }
+                _atomic_json(state_path, local_state)
+                generated += 1
                 logger.info(
-                    "sensor_sample_created",
+                    "sensor_sample_buffered",
                     sequence=event.sequence,
-                    event_type=event.event_type,
                     payload=payload,
-                    previous_event_hash=event.previous_event_hash.hex(),
-                )
-                result = submit_with_retry(
-                    client,
-                    event.to_wire(),
-                    retries,
-                    0.2,
-                    logger=logger,
-                )
-                if not result.get("accepted"):
-                    raise RuntimeError(f"gateway did not accept event: {result}")
-                _atomic_json(
-                    state_path,
-                    {
-                        "sequence": event.sequence,
-                        "previous_event_hash": event.event_hash.hex(),
-                    },
-                )
-                logger.info(
-                    "device_state_persisted",
-                    sequence=event.sequence,
-                    event_hash=event.event_hash.hex(),
+                    buffered_events=len(outbox),
                     state_path=str(state_path),
                 )
-                sent += 1
+
+                try:
+                    delivered += _sync_and_flush(
+                        client=client,
+                        device_id=device_id,
+                        key=key,
+                        client_state=client_state,
+                        local_state=local_state,
+                        state_path=state_path,
+                        outbox=outbox,
+                        retries=1 if continuous else retries,
+                        logger=logger,
+                    )
+                except (RuntimeError, httpx.HTTPError, DeviceStateError) as exc:
+                    logger.warning(
+                        "event_retained_for_reconnection",
+                        sequence=event.sequence,
+                        error=f"{type(exc).__name__}: {exc}",
+                        buffered_events=len(outbox),
+                    )
+                    if not continuous:
+                        raise
+
                 if interval_ms and not _shutdown_requested:
                     time.sleep(interval_ms / 1000.0)
     except Exception as exc:
         logger.error(
             "device_failed",
             error=f"{type(exc).__name__}: {exc}",
-            events_sent=sent,
+            events_generated=generated,
+            events_delivered=delivered,
+            buffered_events=len(outbox),
             last_sequence=client_state.sequence,
             exc_info=True,
         )
@@ -269,14 +380,19 @@ def run_device(
         logger.info(
             "device_stopped",
             shutdown_requested=_shutdown_requested,
-            events_sent=sent,
+            events_generated=generated,
+            events_delivered=delivered,
+            buffered_events=len(outbox),
             last_sequence=client_state.sequence,
             duration_seconds=round(time.perf_counter() - started, 3),
         )
 
     return {
         "device_id": device_id,
-        "events_sent": sent,
+        "events_sent": generated,
+        "events_generated": generated,
+        "events_delivered": delivered,
+        "buffered_events": len(outbox),
         "last_sequence": client_state.sequence,
         "last_event_hash": client_state.previous_event_hash.hex(),
     }
@@ -313,6 +429,11 @@ def main() -> None:
         action="store_true",
         default=os.getenv("DEVICE_CONTINUOUS", "0") == "1",
     )
+    parser.add_argument(
+        "--max-buffered-events",
+        type=int,
+        default=int(os.getenv("DEVICE_MAX_BUFFERED_EVENTS", "10000")),
+    )
     args = parser.parse_args()
     if not args.device_id:
         parser.error("--device-id or DEVICE_ID is required")
@@ -336,6 +457,7 @@ def main() -> None:
         request_timeout=args.request_timeout,
         retries=args.retries,
         continuous=args.continuous,
+        max_buffered_events=args.max_buffered_events,
     )
     print(json.dumps(result, indent=2), flush=True)
 

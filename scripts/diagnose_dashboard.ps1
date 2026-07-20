@@ -30,6 +30,15 @@ if ($Repair) {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
+Step "Gateway image and module command"
+$rendered = docker compose config
+if (($rendered -notmatch "edgechaindb:0.6.0") -or ($rendered -notmatch "edgechaindb.gateway_server")) {
+    Write-Host "FAIL Compose is not using the 0.6.0 module entrypoint" -ForegroundColor Red
+    $failures++
+} else {
+    Write-Host "PASS image edgechaindb:0.6.0 and python -m gateway entrypoint" -ForegroundColor Green
+}
+
 Step "Gateway container state"
 docker compose ps gateway
 if ($LASTEXITCODE -ne 0) { $failures++ }

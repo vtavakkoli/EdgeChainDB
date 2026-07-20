@@ -78,13 +78,21 @@ edgechain-demo --database demo.db --events 12
 
 The demo creates three authorities, requires a 2-of-3 quorum, enrolls two devices, generates signed events, finalizes blocks, verifies the complete database, and verifies a Merkle inclusion proof.
 
-## Run the API
+## Run the API and monitor
 
 ```bash
-edgechain-api --database edgechain.db --host 127.0.0.1 --port 8000
+python -m edgechaindb.gateway_server \
+  --database edgechain.db \
+  --node-key edgechain-node.key \
+  --host 127.0.0.1 \
+  --api-port 8000 \
+  --monitor-port 3030
 ```
 
-Open the generated API documentation at `/docs`.
+Open the API documentation at `http://127.0.0.1:8000/docs` and the live monitor at
+`http://127.0.0.1:3030`. The installed `edgechain-*` console commands remain
+convenience aliases, but Docker Compose deliberately uses `python -m ...` so a
+missing generated console executable cannot prevent container startup.
 
 The API node creates a persistent Ed25519 authority key in
 `edgechain-node.key`. Its default development quorum is one. Multi-node
@@ -150,6 +158,30 @@ The gateway must verify the signature and continuity before acknowledging or
 persisting the event. MQTT QoS does not replace replay protection; duplicate
 delivery is expected and is handled by the event hash and sequence constraints.
 
+## Suggested research contribution
+
+A defensible paper contribution could be evaluated as:
+
+**Continuity-Aware Quorum Ledger for Intermittently Connected IoT**
+
+The testable hypothesis is that the dual micro/macro-chain detects dropped,
+replayed, and gateway-tampered telemetry with lower device energy and lower
+finalization latency than proof-of-work or per-event distributed consensus.
+
+Measure:
+
+- signing energy per event;
+- bytes per event;
+- gateway ingest throughput;
+- block finalization latency;
+- storage overhead;
+- replay and deletion detection rate;
+- behavior under offline buffering and reconnection;
+- Byzantine authority tolerance for different quorum sizes.
+
+Do not describe the system as scientifically novel until a structured
+literature and patent search has been completed.
+
 ## Production work still required
 
 - Mutual TLS and authenticated administrative enrollment.
@@ -165,7 +197,7 @@ delivery is expected and is handled by the event hash and sequence constraints.
 
 ## Docker Compose: 20 isolated IoT nodes
 
-Version 0.4 provides a complete distributed and observable testbed:
+Version 0.6 provides a complete distributed, observable, and research-benchmark testbed:
 
 - one gateway container with persistent SQLite WAL storage;
 - twenty continuously running, independently controlled device containers;
@@ -192,12 +224,26 @@ edgechain-system-test --mode local --expected-devices 20 \
 
 ### Scenarios covered
 
-The generated report includes structural Compose validation, 20-node concurrent
-ingestion, identity conflict prevention, forged signatures, signed-payload
-tampering, replay-safe retries, out-of-order messages, broken chain links,
-checkpoint recovery, automatic and manual block sealing, quorum finality,
+The generated system report includes structural Compose validation, 20-node
+concurrent ingestion, identity conflict prevention, forged signatures, signed-
+payload tampering, replay-safe retries, out-of-order messages, broken chain
+links, checkpoint recovery, automatic and manual block sealing, quorum finality,
 valid and altered Merkle proofs, complete ledger audit, and persistent restart
 recovery.
+
+Version 0.6 also executes eight research benchmarks:
+
+1. Ed25519 signing energy per event, using Linux RAPL when available and an
+   explicitly labelled CPU-time/power estimate otherwise.
+2. Canonical payload, signature, wire JSON, and logical storage bytes per event.
+3. Concurrent gateway ingest throughput with p50, p95, and p99 latency.
+4. Event-to-quorum-finality latency.
+5. Incremental SQLite, index, block, and signature storage overhead.
+6. Replay and destructive deletion detection rates.
+7. Durable offline outbox buffering, ordered reconnection, and idempotent retry.
+8. Invalid-signature rejection and liveness across multiple authority/quorum
+   configurations. This is threshold-quorum testing, not a proof of general
+   asynchronous Byzantine consensus.
 
 ## Docker workflows and live cluster dashboard
 
@@ -224,12 +270,13 @@ This starts:
 Open the dedicated network operations dashboard at:
 
 ```text
-http://localhost:3030
+http://127.0.0.1:3030
 ```
 
-Port `3030` is a localhost-only second published port for the gateway monitor.
-Port `8000` remains the API port. Both reach the same hardened gateway process,
-so monitoring does not require a second database connection or another service.
+Port `3030` is now a real second listener inside the gateway container. Port
+`8000` remains the device/API listener. Both listeners share the same in-process
+ledger, locks, database object, and Docker controller; port `3030` is no longer a
+host-side alias to port `8000`.
 
 The dashboard shows:
 
@@ -241,8 +288,8 @@ The dashboard shows:
 - selectable logs for `gateway`, `run`, `test`, and every device;
 - start, stop, restart, pause, and resume controls for one or all devices.
 
-The API documentation remains available at `http://localhost:8000/docs`, and
-the same dashboard is also reachable at `http://localhost:8000/dashboard`.
+The API documentation remains available at `http://127.0.0.1:8000/docs`, and
+the same dashboard is also reachable at `http://127.0.0.1:8000/dashboard`.
 
 The gateway intentionally runs as root only for access to the local Docker
 socket used by the development dashboard. All capabilities are dropped except
@@ -250,17 +297,30 @@ socket used by the development dashboard. All capabilities are dropped except
 is initialized for UID 1000. Do not expose this development control plane to a
 public network.
 
-#### Recover an unhealthy gateway after upgrading
+#### Upgrade or repair the dashboard listener
 
-If an older gateway container is already restarting with
-`sqlite3.OperationalError: unable to open database file`, recreate the
-container so Docker applies the corrected capability configuration:
+An older container can keep the previous port mapping even after the Compose
+file changes. Rebuild and force-recreate the gateway and run coordinator:
 
 ```bash
 docker compose up -d --build --force-recreate gateway run
-docker compose ps
-docker compose logs --tail=100 gateway
 ```
+
+Then run the built-in diagnosis:
+
+```powershell
+.\scripts\diagnose_dashboard.ps1
+```
+
+or on Linux/macOS:
+
+```bash
+./scripts/diagnose_dashboard.sh
+```
+
+The diagnostic verifies the published port, API health, monitor health,
+dashboard HTML marker, SQLite WAL mode, `PRAGMA quick_check`, and recent gateway
+logs. Add `-Repair` on PowerShell or `--repair` on shell to rebuild first.
 
 The existing `gateway-data` volume is preserved. Do not run `down -v` unless
 you intentionally want to erase the ledger and all device checkpoints.
@@ -289,18 +349,99 @@ benchmark, individual service logs are also copied into `result/logs/`.
 Generated files:
 
 ```text
-result/report.html
-result/result.json
+result/report.html                         # complete system validation
+result/result.json                         # machine-readable system result
 result/pytest.txt
 result/docker-compose.log
 result/benchmark-status.json
 result/logs/gateway.log
 result/logs/device-01.log
 result/logs/test.log
+result/benchmarks/report.html              # research benchmark dashboard
+result/benchmarks/summary.json
+result/benchmarks/signing_energy.{json,csv}
+result/benchmarks/bytes_per_event.{json,csv}
+result/benchmarks/gateway_ingest_throughput.{json,csv}
+result/benchmarks/block_finalization_latency.{json,csv}
+result/benchmarks/storage_overhead.{json,csv}
+result/benchmarks/integrity_detection.{json,csv}
+result/benchmarks/offline_reconnection.{json,csv}
+result/benchmarks/byzantine_quorum.{json,csv}
 ```
 
+The monitor serves the research summary at
+`http://127.0.0.1:3030/benchmark/research/summary` and the HTML report at
+`http://127.0.0.1:3030/benchmark/research/report`.
+
 The latest completed report is also linked from the dashboard and served at
-`http://localhost:3030/benchmark/report`.
+`http://127.0.0.1:3030/benchmark/report`.
+
+
+### Container entry-point fix
+
+Older packages started services through generated commands such as
+`edgechain-gateway`. If a cached image was built before that console script was
+installed, OCI startup failed with `executable file not found in $PATH`. Version
+0.6 removes that dependency from Compose:
+
+```yaml
+command: ["python", "-m", "edgechaindb.gateway_server", ...]
+```
+
+The gateway, devices, run coordinator, and test runner all use importable Python
+modules. The Compose image is explicitly tagged `edgechaindb:0.6.0`, and the
+Docker build executes module smoke checks. Therefore a normal first run builds
+the new image instead of silently reusing the older broken command.
+
+For a clean upgrade that preserves all volumes:
+
+```bash
+docker compose down --remove-orphans
+docker compose up -d --build --force-recreate run
+```
+
+Do not add `-v` unless the ledger and every device identity should be erased.
+
+### Durable offline operation
+
+Each device now writes a signed event to `/data/outbox.json` before attempting
+network delivery. While the gateway is unavailable, the device continues to
+create a bounded, hash-linked local stream. After reconnection it enrolls or
+checks its checkpoint, removes events already accepted by the gateway, and
+replays the remaining FIFO in sequence. A crash after remote acceptance but
+before local acknowledgement is safe because the gateway returns the same event
+as an idempotent duplicate. `DEVICE_MAX_BUFFERED_EVENTS` bounds disk growth.
+
+### Database architecture
+
+EdgeChainDB is not a peer-to-peer cryptocurrency blockchain. It is an
+edge-gateway telemetry database built on SQLite WAL with cryptographic ledger
+semantics:
+
+- every device has an Ed25519 identity and signs each event;
+- every device stream is a strict sequence-linked micro-chain;
+- accepted events are stored transactionally and delivered idempotently;
+- pending events are grouped into Merkle-rooted blocks;
+- block headers link to the previous finalized block and capture the authority
+  set, quorum threshold, and policy hash;
+- authorities sign blocks until quorum finality is reached;
+- the verifier rechecks signatures, sequence continuity, Merkle roots, block
+  links, authority snapshots, and quorum signatures;
+- SQLite WAL, busy timeouts, foreign keys, and persistent Docker volumes provide
+  local crash recovery and durable storage.
+
+The dashboard exposes database size, WAL size, journal mode, schema version,
+row counts, and integrity features. A deeper check is available at:
+
+```text
+http://127.0.0.1:3030/database/info?quick_check=true
+```
+
+This design is strong for a research prototype, industrial edge gateway, or
+single-site auditable telemetry store. It is not yet a horizontally replicated
+multi-gateway database: production use still needs authenticated enrollment,
+TLS/mTLS, secret management, authorization, backup/restore, schema migrations,
+rate limits, multi-authority deployment, and replicated failover.
 
 ### Fixed restart-verification timeout
 
@@ -308,7 +449,7 @@ Full ledger verification validates every signature, device micro-chain, Merkle
 root, block link, and quorum signature. On a ledger with roughly 9,600 events,
 that verification took about 13 seconds. The previous recovery checker used a
 fixed five-second HTTP read timeout and therefore reported a false `ReadTimeout`
-after a successful gateway restart. Version 0.4 waits for gateway health first
+after a successful gateway restart. Version 0.6 waits for gateway health first
 and then assigns a size-aware verification timeout of 60 to 300 seconds.
 
 ### Why the previous PowerShell script failed

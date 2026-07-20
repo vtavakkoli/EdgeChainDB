@@ -52,6 +52,7 @@ def test_dashboard_and_cluster_event_monitor(tmp_path):
     dashboard = client.get("/dashboard")
     assert dashboard.status_code == 200
     assert "EdgeChainDB Cluster Monitor" in dashboard.text
+    assert "Research metrics" in dashboard.text
 
     device_key = KeyPair.generate()
     assert client.post(
@@ -138,3 +139,39 @@ def test_monitor_health_and_database_metadata(tmp_path):
     assert body["quick_check"] == "ok"
     assert "events" in body["tables"]
     assert "Merkle-rooted blocks" in body["features"]
+
+
+def test_research_benchmark_artifacts_are_served_safely(tmp_path, monkeypatch):
+    benchmark_dir = tmp_path / "results" / "benchmarks"
+    benchmark_dir.mkdir(parents=True)
+    (benchmark_dir / "summary.json").write_text(
+        '{"generated_at":"2026-07-20T00:00:00Z","passed":8,"failed":0,"benchmarks":[]}',
+        encoding="utf-8",
+    )
+    (benchmark_dir / "report.html").write_text(
+        "<html><body>research report</body></html>", encoding="utf-8"
+    )
+    (benchmark_dir / "signing_energy.json").write_text(
+        '{"status":"PASS"}', encoding="utf-8"
+    )
+    monkeypatch.setenv("EDGECHAIN_RESULT_DIR", str(tmp_path / "results"))
+    app = create_app(
+        database_path=str(tmp_path / "artifact.db"),
+        node_key_path=str(tmp_path / "artifact.key"),
+        node_id="artifact-gateway",
+        quorum_threshold=1,
+        batch_size=25,
+    )
+    client = TestClient(app)
+
+    summary = client.get("/benchmark/research/summary")
+    assert summary.status_code == 200
+    assert summary.json()["passed"] == 8
+    assert summary.json()["status"] == "completed"
+    assert client.get("/benchmark/research/report").status_code == 200
+    assert client.get(
+        "/benchmark/research/artifacts/signing_energy.json"
+    ).status_code == 200
+    assert client.get(
+        "/benchmark/research/artifacts/../result.json"
+    ).status_code in {400, 404}

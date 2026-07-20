@@ -27,10 +27,21 @@ def test_gateway_publishes_monitor_port_and_rotates_all_logs():
     compose = yaml.safe_load(Path("docker-compose.yml").read_text())
     services = compose["services"]
     assert "127.0.0.1:3030:3030" in services["gateway"]["ports"]
-    assert services["gateway"]["command"][0] == "edgechain-gateway"
+    assert services["gateway"]["command"][:3] == ["python", "-m", "edgechaindb.gateway_server"]
     assert "--monitor-port" in services["gateway"]["command"]
     for name in ["gateway", "run", "test", "device-01", "device-20"]:
         logging = services[name]["logging"]
         assert logging["driver"] == "local"
         assert logging["options"]["max-size"] == "10m"
         assert logging["options"]["max-file"] == "5"
+
+
+def test_compose_uses_module_entrypoints_and_versioned_image():
+    import yaml
+
+    compose = yaml.safe_load(Path("docker-compose.yml").read_text())
+    services = compose["services"]
+    assert services["gateway"]["image"] == "edgechaindb:0.6.0"
+    assert services["run"]["command"] == ["python", "-m", "edgechaindb.cluster_runtime"]
+    assert services["test"]["command"][:3] == ["python", "-m", "edgechaindb.benchmark"]
+    assert services["device-01"]["command"][:3] == ["python", "-m", "edgechaindb.device_node"]

@@ -8,6 +8,11 @@ if [ "$repair" = "--repair" ]; then
   docker compose up -d --build --force-recreate gateway || exit $?
 fi
 
+echo "==> gateway image and module command"
+config="$(docker compose config)"
+printf "%s\n" "$config" | grep -q "edgechaindb:0.6.0" || failures=$((failures + 1))
+printf "%s\n" "$config" | grep -q "edgechaindb.gateway_server" || failures=$((failures + 1))
+
 echo "==> gateway state"
 docker compose ps gateway || failures=$((failures + 1))
 

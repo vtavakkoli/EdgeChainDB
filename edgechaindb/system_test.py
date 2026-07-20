@@ -24,6 +24,7 @@ import uvicorn
 import yaml
 
 from .api import create_app
+from .benchmarks import build_specs as build_research_benchmarks, finalize as finalize_research_benchmarks
 from .crypto import KeyPair
 from .device import DeviceClient
 from .ledger import EdgeChainLedger
@@ -304,8 +305,8 @@ def validate_compose(path: Path, expected_devices: int) -> tuple[str, dict[str, 
     if not set(devices).issubset(run_dependencies):
         raise AssertionError("run must start all device services")
     test_command = " ".join(services["test"].get("command", []))
-    if "edgechain-benchmark" not in test_command:
-        raise AssertionError("test must execute edgechain-benchmark")
+    if "edgechaindb.benchmark" not in test_command:
+        raise AssertionError("test must execute the edgechaindb.benchmark module")
     ids = [services[name].get("environment", {}).get("DEVICE_ID") for name in devices]
     if len(set(ids)) != expected_devices or None in ids:
         raise AssertionError("device service IDs are missing or duplicated")
@@ -474,6 +475,14 @@ def run_suite(args: argparse.Namespace) -> int:
                     gateway, args.expected_devices, args.events_per_device
                 ),
             )
+
+        for benchmark_spec in build_research_benchmarks(gateway, base_url):
+            report.run(
+                benchmark_spec.name,
+                benchmark_spec.category,
+                lambda spec=benchmark_spec: spec.execute(result_dir),
+            )
+        finalize_research_benchmarks(result_dir)
 
         test_id = f"security-{uuid.uuid4().hex[:10]}"
         key = KeyPair.generate()

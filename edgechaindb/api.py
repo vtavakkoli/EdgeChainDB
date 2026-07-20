@@ -74,7 +74,7 @@ def create_app(
 
     app = FastAPI(
         title="EdgeChainDB",
-        version="0.5.0",
+        version="0.6.0",
         description=(
             "Edge-first, signed and quorum-finalized IoT telemetry ledger with a "
             "development cluster monitor. Administrative endpoints require strong "
@@ -571,6 +571,39 @@ def create_app(
             return json.loads(path.read_text(encoding="utf-8"))
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.get("/benchmark/research/summary")
+    def research_benchmark_summary() -> dict[str, Any]:
+        path = app.state.result_dir / "benchmarks" / "summary.json"
+        if not path.exists():
+            return {"status": "not_started", "passed": 0, "failed": 0, "benchmarks": []}
+        try:
+            import json
+
+            return {"status": "completed", **json.loads(path.read_text(encoding="utf-8"))}
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.get("/benchmark/research/report", include_in_schema=False)
+    def research_benchmark_report() -> FileResponse:
+        path = app.state.result_dir / "benchmarks" / "report.html"
+        if not path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail="No research benchmark report exists yet. Run: docker compose up -d test",
+            )
+        return FileResponse(path, media_type="text/html")
+
+    @app.get("/benchmark/research/artifacts/{filename}", include_in_schema=False)
+    def research_benchmark_artifact(filename: str) -> FileResponse:
+        safe_name = Path(filename).name
+        if safe_name != filename or not safe_name.endswith((".json", ".csv")):
+            raise HTTPException(status_code=400, detail="unsupported artifact name")
+        path = app.state.result_dir / "benchmarks" / safe_name
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="benchmark artifact does not exist")
+        media_type = "application/json" if path.suffix == ".json" else "text/csv"
+        return FileResponse(path, media_type=media_type, filename=safe_name)
 
     @app.get("/proofs/{event_hash}")
     def event_proof(event_hash: str) -> dict[str, Any]:
