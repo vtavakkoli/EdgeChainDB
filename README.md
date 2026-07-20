@@ -32,23 +32,37 @@ The gateway chain detects:
 
 ## Architecture
 
-```text
-IoT device
-  └─ signed event #1 → signed event #2 → signed event #3
-                         device micro-chain
-                                  │
-                                  ▼
-                       validating edge gateway
-                                  │
-                    verified pending event pool
-                                  │
-                                  ▼
-     Merkle block N-1 ← Merkle block N ← Merkle block N+1
-                                  │
-                         2-of-3 authority quorum
-                                  │
-                                  ▼
-                      finalized queryable ledger
+```mermaid
+flowchart TD
+    D[IoT Device]
+
+    E1[Signed Event #1]
+    E2[Signed Event #2]
+    E3[Signed Event #3]
+
+    G[Validating Edge Gateway]
+    P[Verified Pending Event Pool]
+
+    B1[Merkle Block N-1]
+    B2[Merkle Block N]
+    B3[Merkle Block N+1]
+
+    Q[2-of-3 Authority Quorum]
+    L[Finalized Queryable Ledger]
+
+    D --> E1
+    E1 --> E2
+    E2 --> E3
+
+    E3 -->|Device Micro-Chain| G
+    G --> P
+    P --> B2
+
+    B1 --> B2
+    B2 --> B3
+
+    B2 --> Q
+    Q --> L
 ```
 
 ## Security choices
