@@ -256,6 +256,27 @@ checkpoints, health, and exit codes. It can start, stop, restart, pause, or
 resume one device or all devices. The API documentation remains available at
 `http://localhost:8000/docs`.
 
+The gateway intentionally runs as root only for access to the local Docker
+socket used by the development dashboard. All capabilities are dropped except
+`DAC_OVERRIDE`, which is required to write the persistent `/data` volume that
+is initialized for UID 1000. Do not expose this development control plane to a
+public network.
+
+#### Recover an unhealthy gateway after upgrading
+
+If an older gateway container is already restarting with
+`sqlite3.OperationalError: unable to open database file`, recreate the
+container so Docker applies the corrected capability configuration:
+
+```bash
+docker compose up -d --build --force-recreate gateway run
+docker compose ps
+docker compose logs --tail=100 gateway
+```
+
+The existing `gateway-data` volume is preserved. Do not run `down -v` unless
+you intentionally want to erase the ledger and all device checkpoints.
+
 ### 2. Run the complete Docker benchmark
 
 ```bash

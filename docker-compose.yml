@@ -49,6 +49,13 @@ services:
       - /tmp
     cap_drop:
       - ALL
+    # The image initializes /data as UID 1000, while the gateway runs as root
+    # so it can access the local Docker socket used by the development dashboard.
+    # After dropping all capabilities, root cannot write to an existing UID-1000
+    # named volume unless DAC_OVERRIDE is restored. Keep the capability narrowly
+    # scoped to this local gateway service.
+    cap_add:
+      - DAC_OVERRIDE
     security_opt:
       - no-new-privileges:true
     mem_limit: 512m
