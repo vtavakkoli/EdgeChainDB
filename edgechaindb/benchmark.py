@@ -12,8 +12,12 @@ from typing import Any
 import httpx
 
 from .cluster_control import DockerClusterController
+from .observability import get_logger
 from .recovery_report import append_recovery_result
 from .system_test import run_suite
+
+
+log = get_logger("benchmark")
 
 
 def _write_status(path: Path, status: str, **extra: Any) -> None:
@@ -24,6 +28,7 @@ def _write_status(path: Path, status: str, **extra: Any) -> None:
         **extra,
     }
     path.write_text(json.dumps(value, indent=2), encoding="utf-8")
+    log.info("benchmark_status_changed", status=status, **extra)
 
 
 def _clean_result_dir(result_dir: Path) -> None:
@@ -79,20 +84,29 @@ def _wait_for_devices(
 
 def _collect_logs(controller: DockerClusterController, result_dir: Path) -> None:
     if not controller.available:
+        log.warning("benchmark_log_collection_skipped", error=controller.error)
         return
     sections: list[str] = []
+    log_dir = result_dir / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
     state = controller.state()
     for item in state.get("containers", []):
         service = item["service"]
         try:
             container = controller.container_for_service(service)
-            raw = container.logs(tail=2000, timestamps=True)
+            raw = container.logs(tail=5000, timestamps=True)
             text = raw.decode("utf-8", errors="replace")
         except Exception as exc:
             text = f"log collection failed: {type(exc).__name__}: {exc}"
+        (log_dir / f"{service}.log").write_text(text, encoding="utf-8")
         sections.append(f"===== {service} =====\n{text}\n")
     (result_dir / "docker-compose.log").write_text(
         "\n".join(sections), encoding="utf-8"
+    )
+    log.info(
+        "benchmark_logs_collected",
+        services=len(sections),
+        directory=str(log_dir),
     )
 
 
@@ -107,6 +121,14 @@ def main() -> None:
     parser.add_argument("--startup-timeout", type=float, default=120.0)
     args = parser.parse_args()
 
+    log.info(
+        "benchmark_started",
+        base_url=args.base_url,
+        expected_devices=args.expected_devices,
+        events_per_device=args.events_per_device,
+        result_dir=args.result_dir,
+        startup_timeout=args.startup_timeout,
+    )
     result_dir = Path(args.result_dir)
     _clean_result_dir(result_dir)
     status_path = result_dir / "benchmark-status.json"
@@ -156,11 +178,13 @@ def main() -> None:
 
         _write_status(status_path, "restarting_gateway", suite_exit_code=exit_code)
         gateway = controller.container_for_service("gateway")
-        gateway.restart(timeout=10)
+        log.info("gateway_restart_requested", container_id=gateway.short_id)
+        gateway.restart(timeout=15)
+        log.info("gateway_restart_command_completed", container_id=gateway.short_id)
         recovery_ok = append_recovery_result(
             base_url=args.base_url,
             result_dir=result_dir,
-            timeout=45,
+            timeout=180,
         )
         if not recovery_ok:
             exit_code = 1
@@ -173,6 +197,11 @@ def main() -> None:
             report="report.html",
         )
     except Exception as exc:
+        log.error(
+            "benchmark_failed",
+            error=f"{type(exc).__name__}: {exc}",
+            exc_info=True,
+        )
         _write_status(
             status_path,
             "failed",
@@ -211,9 +240,16 @@ def main() -> None:
         exit_code = 1
     finally:
         if stopped_services:
+            log.info("benchmark_resuming_devices", count=len(stopped_services))
             for service in stopped_services:
                 controller.control(service, "start")
         _collect_logs(controller, result_dir)
+        log.info(
+            "benchmark_finished",
+            exit_code=exit_code,
+            report=str(result_dir / "report.html"),
+            result=str(result_dir / "result.json"),
+        )
 
     raise SystemExit(exit_code)
 

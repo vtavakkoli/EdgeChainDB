@@ -4,9 +4,10 @@ from datetime import datetime, timezone
 import os
 from pathlib import Path
 import threading
+import time
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
 
@@ -16,6 +17,7 @@ from .crypto import KeyPair
 from .dashboard import render_dashboard
 from .ledger import EdgeChainLedger
 from .models import SignedEvent
+from .observability import get_logger
 from .store import Database
 
 
@@ -46,6 +48,9 @@ def _iso_millis(value: int | None) -> str | None:
     return datetime.fromtimestamp(value / 1000, tz=timezone.utc).isoformat()
 
 
+gateway_log = get_logger("gateway")
+
+
 def create_app(
     *,
     database_path: str | None = None,
@@ -69,7 +74,7 @@ def create_app(
 
     app = FastAPI(
         title="EdgeChainDB",
-        version="0.3.0",
+        version="0.4.0",
         description=(
             "Edge-first, signed and quorum-finalized IoT telemetry ledger with a "
             "development cluster monitor. Administrative endpoints require strong "
@@ -84,6 +89,52 @@ def create_app(
     app.state.seal_lock = threading.Lock()
     app.state.cluster_controller = DockerClusterController()
     app.state.result_dir = Path(os.getenv("EDGECHAIN_RESULT_DIR", "result"))
+    app.state.started_monotonic = time.monotonic()
+    app.state.started_at = datetime.now(timezone.utc).isoformat()
+
+    gateway_log.info(
+        "gateway_initialized",
+        database_path=str(database_path),
+        node_key_path=str(node_key_path),
+        node_id=node_id,
+        quorum_threshold=quorum_threshold,
+        batch_size=batch_size,
+        monitor_url="http://localhost:3030",
+    )
+
+    @app.middleware("http")
+    async def request_log_middleware(request: Request, call_next):
+        started = time.perf_counter()
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        except Exception as exc:
+            gateway_log.error(
+                "http_request_failed",
+                method=request.method,
+                path=request.url.path,
+                error=f"{type(exc).__name__}: {exc}",
+                exc_info=True,
+            )
+            raise
+        finally:
+            duration_ms = round((time.perf_counter() - started) * 1000, 3)
+            fields = {
+                "method": request.method,
+                "path": request.url.path,
+                "query": request.url.query,
+                "status_code": status_code,
+                "duration_ms": duration_ms,
+                "client": request.client.host if request.client else None,
+            }
+            if request.url.path == "/health" and status_code < 400:
+                gateway_log.debug("http_request", **fields)
+            elif status_code >= 400:
+                gateway_log.warning("http_request", **fields)
+            else:
+                gateway_log.info("http_request", **fields)
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def root() -> HTMLResponse:
@@ -107,6 +158,8 @@ def create_app(
         return {
             "status": "ok",
             "node_id": app.state.node_id,
+            "started_at": app.state.started_at,
+            "uptime_seconds": round(time.monotonic() - app.state.started_monotonic, 3),
             **database.statistics(),
             "open_proposal": open_proposal,
             "cluster_control_available": app.state.cluster_controller.available,
@@ -146,8 +199,21 @@ def create_app(
     def enroll_device(value: DeviceEnrollment) -> dict[str, Any]:
         try:
             public_key = bytes.fromhex(value.public_key)
-            return ledger.register_device(value.device_id, public_key)
+            result = ledger.register_device(value.device_id, public_key)
+            gateway_log.info(
+                "device_enrolled",
+                device_id=value.device_id,
+                created_new=result.get("created"),
+                last_sequence=result.get("last_sequence"),
+                key_id=result.get("key_id"),
+            )
+            return result
         except Exception as exc:
+            gateway_log.warning(
+                "device_enrollment_rejected",
+                device_id=value.device_id,
+                error=f"{type(exc).__name__}: {exc}",
+            )
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/events", status_code=202)
@@ -155,6 +221,15 @@ def create_app(
         try:
             event = SignedEvent.from_wire(value.model_dump())
             accepted = ledger.accept_event(event)
+            gateway_log.info(
+                "telemetry_accepted",
+                device_id=event.device_id,
+                sequence=event.sequence,
+                event_type=event.event_type,
+                duplicate=accepted.get("duplicate", False),
+                event_hash=accepted.get("event_hash"),
+                payload=event.payload,
+            )
             if database.pending_count() >= app.state.batch_size:
                 with app.state.seal_lock:
                     if (
@@ -166,20 +241,36 @@ def create_app(
                             app.state.node_key.private_key,
                             max_events=app.state.batch_size,
                         )
+                        gateway_log.info(
+                            "block_auto_sealed",
+                            **accepted["block"],
+                        )
             return accepted
         except Exception as exc:
+            gateway_log.warning(
+                "telemetry_rejected",
+                device_id=value.device_id,
+                sequence=value.sequence,
+                event_type=value.event_type,
+                error=f"{type(exc).__name__}: {exc}",
+            )
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/blocks/seal")
     def seal_block(max_events: int = 256) -> dict[str, Any]:
         try:
             with app.state.seal_lock:
-                return ledger.propose_block(
+                result = ledger.propose_block(
                     app.state.node_id,
                     app.state.node_key.private_key,
                     max_events=max_events,
                 )
+            gateway_log.info("block_manually_sealed", **result)
+            return result
         except Exception as exc:
+            gateway_log.warning(
+                "block_seal_rejected", error=f"{type(exc).__name__}: {exc}"
+            )
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/blocks/{height}/signatures")
@@ -249,9 +340,11 @@ def create_app(
         ]
 
     @app.get("/cluster/state")
-    def cluster_state() -> dict[str, Any]:
-        controller_state = app.state.cluster_controller.state()
-        activity = database.device_activity()
+    def cluster_state(include_metrics: bool = True) -> dict[str, Any]:
+        controller_state = app.state.cluster_controller.state(
+            include_metrics=include_metrics
+        )
+        activity = database.device_activity(window_ms=60_000)
         runtime_by_service = {
             item["service"]: item
             for item in controller_state.get("containers", [])
@@ -265,31 +358,81 @@ def create_app(
                 if device_id.startswith("iot-device-")
             }
         )
+        now_ms = int(time.time() * 1000)
         devices = []
         for service in services:
             suffix = service.rsplit("-", 1)[-1]
             device_id = f"iot-device-{suffix}"
             runtime = runtime_by_service.get(service, {})
             ledger_activity = activity.get(device_id, {})
+            payload_bytes = ledger_activity.get("payload_cbor")
+            payload = loads(payload_bytes) if payload_bytes is not None else {}
+            last_event_at_ms = ledger_activity.get("last_event_at_ms")
+            age_ms = (
+                max(now_ms - int(last_event_at_ms), 0)
+                if last_event_at_ms is not None
+                else None
+            )
+            running = bool(runtime.get("running", False))
+            if age_ms is None:
+                telemetry_status = "never"
+            elif running and age_ms <= 10_000:
+                telemetry_status = "live"
+            elif age_ms <= 60_000:
+                telemetry_status = "delayed"
+            else:
+                telemetry_status = "stale"
+            device_time_ms = ledger_activity.get("device_time_ms")
+            clock_lag_ms = (
+                int(last_event_at_ms) - int(device_time_ms)
+                if last_event_at_ms is not None and device_time_ms is not None
+                else None
+            )
+            events_in_window = int(ledger_activity.get("events_in_window", 0))
             devices.append(
                 {
                     "service": service,
                     "device_id": device_id,
                     "state": runtime.get("state", "unknown"),
-                    "running": bool(runtime.get("running", False)),
+                    "running": running,
                     "paused": bool(runtime.get("paused", False)),
+                    "restarting": bool(runtime.get("restarting", False)),
+                    "oom_killed": bool(runtime.get("oom_killed", False)),
                     "health": runtime.get("health"),
                     "exit_code": runtime.get("exit_code"),
+                    "restart_count": runtime.get("restart_count", 0),
                     "container_id": runtime.get("container_id"),
+                    "container_name": runtime.get("container_name"),
+                    "networks": runtime.get("networks", []),
+                    "metrics": runtime.get("metrics", {}),
                     "last_sequence": ledger_activity.get("last_sequence", 0),
-                    "last_event_at_ms": ledger_activity.get("last_event_at_ms"),
-                    "last_event_at": _iso_millis(
-                        ledger_activity.get("last_event_at_ms")
-                    ),
+                    "event_type": ledger_activity.get("event_type"),
+                    "last_payload": payload,
+                    "last_event_at_ms": last_event_at_ms,
+                    "last_event_at": _iso_millis(last_event_at_ms),
+                    "last_event_age_ms": age_ms,
+                    "device_time_ms": device_time_ms,
+                    "clock_lag_ms": clock_lag_ms,
+                    "block_height": ledger_activity.get("block_height"),
+                    "finalized": ledger_activity.get("finalized"),
+                    "events_last_minute": events_in_window,
+                    "events_per_second": round(events_in_window / 60, 3),
+                    "telemetry_status": telemetry_status,
                 }
             )
+        all_containers = controller_state.get("containers", [])
+        metrics = [item.get("metrics", {}) for item in all_containers]
+        total_rx = sum(int(item.get("network_rx_bytes", 0)) for item in metrics)
+        total_tx = sum(int(item.get("network_tx_bytes", 0)) for item in metrics)
+        total_recent_events = sum(item["events_last_minute"] for item in devices)
         return {
             "node_id": app.state.node_id,
+            "monitor_port": 3030,
+            "gateway_started_at": app.state.started_at,
+            "gateway_uptime_seconds": round(
+                time.monotonic() - app.state.started_monotonic, 3
+            ),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
             "ledger": database.statistics(),
             "controller": {
                 key: value
@@ -299,18 +442,53 @@ def create_app(
             "summary": {
                 "total_devices": len(devices),
                 "running_devices": sum(item["running"] for item in devices),
+                "live_devices": sum(
+                    item["telemetry_status"] == "live" for item in devices
+                ),
+                "delayed_devices": sum(
+                    item["telemetry_status"] == "delayed" for item in devices
+                ),
+                "stale_devices": sum(
+                    item["telemetry_status"] in {"stale", "never"}
+                    for item in devices
+                ),
                 "paused_devices": sum(item["paused"] for item in devices),
                 "stopped_devices": sum(
                     item["state"] in {"exited", "dead"} for item in devices
                 ),
+                "events_last_minute": total_recent_events,
+                "events_per_second": round(total_recent_events / 60, 3),
+                "network_rx_bytes": total_rx,
+                "network_tx_bytes": total_tx,
             },
+            "services": [
+                item
+                for item in all_containers
+                if not item["service"].startswith("device-")
+            ],
             "devices": devices,
         }
+
+    @app.get("/cluster/network")
+    def cluster_network() -> dict[str, Any]:
+        return app.state.cluster_controller.network_state()
+
+    @app.get("/cluster/logs/{service}")
+    def cluster_logs(service: str, tail: int = 250) -> dict[str, Any]:
+        try:
+            return app.state.cluster_controller.logs(service, tail=tail)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @app.post("/cluster/devices/{action}")
     def control_all_devices(action: str) -> dict[str, Any]:
         if action not in ALLOWED_ACTIONS:
             raise HTTPException(status_code=400, detail=f"unsupported action: {action}")
+        gateway_log.info("cluster_action_requested", action=action, scope="all")
         results = app.state.cluster_controller.control_all(action)
         if not results and not app.state.cluster_controller.available:
             raise HTTPException(
@@ -318,17 +496,40 @@ def create_app(
                 detail=app.state.cluster_controller.error
                 or "Docker control is unavailable",
             )
-        return {
+        response = {
             "action": action,
             "ok": all(item["ok"] for item in results),
             "results": results,
         }
+        gateway_log.info(
+            "cluster_action_completed",
+            action=action,
+            scope="all",
+            ok=response["ok"],
+            affected=len(results),
+        )
+        return response
 
     @app.post("/cluster/devices/{service}/{action}")
     def control_device(service: str, action: str) -> dict[str, Any]:
+        gateway_log.info(
+            "cluster_action_requested", action=action, scope="single", service=service
+        )
         result = app.state.cluster_controller.control(service, action).to_dict()
         if not result["ok"]:
+            gateway_log.warning(
+                "cluster_action_failed",
+                action=action,
+                service=service,
+                error=result.get("error"),
+            )
             raise HTTPException(status_code=400, detail=result)
+        gateway_log.info(
+            "cluster_action_completed",
+            action=action,
+            service=service,
+            state=result.get("state"),
+        )
         return result
 
     @app.get("/benchmark/report", include_in_schema=False)
@@ -362,7 +563,19 @@ def create_app(
 
     @app.get("/verify")
     def verify() -> dict[str, Any]:
+        started = time.perf_counter()
+        gateway_log.info("ledger_verification_started")
         result = ledger.verify_all()
+        duration_ms = round((time.perf_counter() - started) * 1000, 3)
+        gateway_log.info(
+            "ledger_verification_completed",
+            valid=result.get("valid"),
+            blocks=result.get("blocks"),
+            events=result.get("events"),
+            errors=len(result.get("errors", [])),
+            duration_ms=duration_ms,
+        )
+        result["duration_ms"] = duration_ms
         if not result["valid"]:
             raise HTTPException(status_code=409, detail=result)
         return result

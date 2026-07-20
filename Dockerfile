@@ -15,5 +15,5 @@ RUN pip install --upgrade pip && pip install ".[dev]" && \
 
 USER edgechain
 VOLUME ["/data"]
-EXPOSE 8000
+EXPOSE 8000 3030
 CMD ["edgechain-api", "--database", "/data/edgechain.db", "--node-key", "/data/gateway.key", "--host", "0.0.0.0", "--port", "8000"]

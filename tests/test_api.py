@@ -72,3 +72,42 @@ def test_dashboard_and_cluster_event_monitor(tmp_path):
         item for item in state.json()["devices"] if item["device_id"] == "iot-device-01"
     )
     assert device_state["last_sequence"] == 1
+
+
+def test_cluster_state_exposes_live_sensor_observability(tmp_path):
+    app = create_app(
+        database_path=str(tmp_path / "observability.db"),
+        node_key_path=str(tmp_path / "observability.key"),
+        node_id="observability-gateway",
+        quorum_threshold=1,
+        batch_size=100,
+    )
+    client = TestClient(app)
+    key = KeyPair.generate()
+    assert client.post(
+        "/devices",
+        json={"device_id": "iot-device-02", "public_key": key.public_bytes.hex()},
+    ).status_code == 201
+    device = DeviceClient("iot-device-02", key)
+    event = device.create_event(
+        "environment",
+        {
+            "temperature_milli_celsius": 21340,
+            "humidity_basis_points": 4875,
+            "battery_millivolts": 3690,
+            "quality": 99,
+        },
+    )
+    assert client.post("/events", json=event.to_wire()).status_code == 202
+
+    response = client.get("/cluster/state?include_metrics=false")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["monitor_port"] == 3030
+    observed = next(
+        item for item in body["devices"] if item["device_id"] == "iot-device-02"
+    )
+    assert observed["last_payload"]["temperature_milli_celsius"] == 21340
+    assert observed["last_payload"]["battery_millivolts"] == 3690
+    assert observed["events_last_minute"] >= 1
+    assert observed["clock_lag_ms"] is not None

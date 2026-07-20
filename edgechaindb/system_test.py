@@ -28,6 +28,10 @@ from .crypto import KeyPair
 from .device import DeviceClient
 from .ledger import EdgeChainLedger
 from .models import SignedEvent, ZERO_HASH
+from .observability import get_logger
+
+
+log = get_logger("system-test")
 
 
 @dataclass
@@ -66,32 +70,59 @@ class Report:
         function: Callable[[], tuple[str, dict[str, Any]] | None],
     ) -> Any:
         started = time.perf_counter()
+        log.info("scenario_started", scenario=name, category=category)
         try:
             value = function()
             details, metrics = value if value is not None else ("Completed", {})
+            duration_ms = (time.perf_counter() - started) * 1000
             result = ScenarioResult(
-                name, category, "PASS", (time.perf_counter() - started) * 1000,
-                details, metrics,
+                name, category, "PASS", duration_ms, details, metrics,
             )
             self.scenarios.append(result)
+            log.info(
+                "scenario_completed",
+                scenario=name,
+                category=category,
+                status="PASS",
+                duration_ms=round(duration_ms, 3),
+                details=details,
+                metrics=metrics,
+            )
             self.checkpoint()
             return value
         except Exception as exc:
+            duration_ms = (time.perf_counter() - started) * 1000
+            error = f"{type(exc).__name__}: {exc}"
             self.scenarios.append(
                 ScenarioResult(
                     name,
                     category,
                     "FAIL",
-                    (time.perf_counter() - started) * 1000,
-                    f"{type(exc).__name__}: {exc}",
+                    duration_ms,
+                    error,
                     {},
                 )
+            )
+            log.error(
+                "scenario_completed",
+                scenario=name,
+                category=category,
+                status="FAIL",
+                duration_ms=round(duration_ms, 3),
+                error=error,
+                exc_info=True,
             )
             self.checkpoint()
             return None
 
     def skip(self, name: str, category: str, details: str) -> None:
         self.scenarios.append(ScenarioResult(name, category, "SKIP", 0, details, {}))
+        log.warning(
+            "scenario_skipped",
+            scenario=name,
+            category=category,
+            details=details,
+        )
         self.checkpoint()
 
     @property

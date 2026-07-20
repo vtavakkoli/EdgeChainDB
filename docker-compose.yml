@@ -1,10 +1,19 @@
 name: edgechaindb
+
+x-json-logging: &json-logging
+  logging:
+    driver: local
+    options:
+      max-size: "10m"
+      max-file: "5"
+
 x-device-common: &device-common
   build:
     context: .
     dockerfile: Dockerfile
   command: ["edgechain-device", "--continuous"]
   restart: unless-stopped
+  <<: *json-logging
   read_only: true
   tmpfs:
     - /tmp
@@ -35,6 +44,7 @@ x-device-common: &device-common
     DEVICE_MAX_RETRIES: "40"
     DEVICE_REQUEST_TIMEOUT: "10"
     DEVICE_CONTINUOUS: "1"
+    EDGECHAIN_LOG_LEVEL: INFO
 
 services:
   gateway:
@@ -44,6 +54,7 @@ services:
     command: ["edgechain-api", "--database", "/data/edgechain.db", "--node-key", "/data/gateway.key", "--node-id", "gateway-01", "--quorum", "1", "--batch-size", "25", "--host", "0.0.0.0", "--port", "8000"]
     user: "0:0"
     restart: unless-stopped
+    <<: *json-logging
     read_only: true
     tmpfs:
       - /tmp
@@ -62,9 +73,14 @@ services:
     cpus: 1.0
     ports:
       - "127.0.0.1:8000:8000"
+      # Dedicated observability entry point. Both ports reach the same hardened
+      # gateway process; localhost:3030 opens the network operations dashboard.
+      - "127.0.0.1:3030:8000"
     environment:
       EDGECHAIN_COMPOSE_PROJECT: "${COMPOSE_PROJECT_NAME:-edgechaindb}"
       EDGECHAIN_RESULT_DIR: /results
+      EDGECHAIN_LOG_LEVEL: INFO
+      EDGECHAIN_MONITOR_PORT: "3030"
     volumes:
       - gateway-data:/data
       - ./result:/results:ro
@@ -244,6 +260,7 @@ services:
       dockerfile: Dockerfile
     command: ["edgechain-cluster-runtime"]
     restart: unless-stopped
+    <<: *json-logging
     read_only: true
     tmpfs:
       - /tmp
@@ -253,7 +270,8 @@ services:
       - no-new-privileges:true
     environment:
       GATEWAY_URL: http://gateway:8000
-      CLUSTER_STATUS_INTERVAL: "30"
+      CLUSTER_STATUS_INTERVAL: "15"
+      EDGECHAIN_LOG_LEVEL: INFO
     depends_on:
       gateway:
         condition: service_healthy
@@ -314,12 +332,14 @@ services:
     user: "0:0"
     command: ["edgechain-benchmark", "--base-url", "http://gateway:8000", "--expected-devices", "20", "--events-per-device", "8", "--result-dir", "/app/result", "--compose-file", "/app/docker-compose.yml", "--project-root", "/app"]
     restart: "no"
+    <<: *json-logging
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
     environment:
       EDGECHAIN_COMPOSE_PROJECT: "${COMPOSE_PROJECT_NAME:-edgechaindb}"
+      EDGECHAIN_LOG_LEVEL: INFO
     depends_on:
       run:
         condition: service_healthy

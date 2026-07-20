@@ -189,13 +189,13 @@ literature and patent search has been completed.
 
 ## Docker Compose: 20 isolated IoT nodes
 
-Version 0.3 provides a complete distributed testbed:
+Version 0.4 provides a complete distributed and observable testbed:
 
 - one gateway container with persistent SQLite WAL storage;
 - twenty continuously running, independently controlled device containers;
 - a private `edgechain-iot-net` bridge network;
 - a persistent key and chain checkpoint for every device;
-- a live gateway dashboard for state, events, and node controls;
+- a live operations dashboard on port `3030` for state, telemetry values, container logs, resource usage, and node controls;
 - automated attack, recovery, scale, Merkle-proof, and audit scenarios;
 - fail-safe JSON and HTML reports under `result/`.
 
@@ -245,16 +245,28 @@ This starts:
 - 20 continuously running IoT device containers;
 - the `run` coordinator that keeps the topology active.
 
-Open the live gateway dashboard at:
+Open the dedicated network operations dashboard at:
 
 ```text
-http://localhost:8000/dashboard
+http://localhost:3030
 ```
 
-The dashboard shows container state, ledger state, recent events, sequence
-checkpoints, health, and exit codes. It can start, stop, restart, pause, or
-resume one device or all devices. The API documentation remains available at
-`http://localhost:8000/docs`.
+Port `3030` is a localhost-only second published port for the gateway monitor.
+Port `8000` remains the API port. Both reach the same hardened gateway process,
+so monitoring does not require a second database connection or another service.
+
+The dashboard shows:
+
+- gateway, run, test, and all 20 device container states;
+- live temperature, humidity, battery, quality, sequence, finality, and clock lag;
+- per-container CPU, memory, RX/TX bytes, IP address, restart count, and health;
+- the private Docker network, subnet, gateway, and connected containers;
+- recent signed telemetry and the current benchmark phase;
+- selectable logs for `gateway`, `run`, `test`, and every device;
+- start, stop, restart, pause, and resume controls for one or all devices.
+
+The API documentation remains available at `http://localhost:8000/docs`, and
+the same dashboard is also reachable at `http://localhost:8000/dashboard`.
 
 The gateway intentionally runs as root only for access to the local Docker
 socket used by the development dashboard. All capabilities are dropped except
@@ -288,11 +300,15 @@ them to create a stable benchmark window, runs unit/integration/security/scale
 scenarios, restarts the gateway, verifies persistent recovery, writes the
 report, and resumes the devices.
 
-Follow its progress with:
+Follow its structured JSON progress with:
 
 ```bash
 docker compose logs -f test
 ```
+
+All services use Docker's rotating `local` logging driver with five 10 MB log
+files. The dashboard can display those logs without shell access. After a
+benchmark, individual service logs are also copied into `result/logs/`.
 
 Generated files:
 
@@ -302,10 +318,22 @@ result/result.json
 result/pytest.txt
 result/docker-compose.log
 result/benchmark-status.json
+result/logs/gateway.log
+result/logs/device-01.log
+result/logs/test.log
 ```
 
 The latest completed report is also linked from the dashboard and served at
-`http://localhost:8000/benchmark/report`.
+`http://localhost:3030/benchmark/report`.
+
+### Fixed restart-verification timeout
+
+Full ledger verification validates every signature, device micro-chain, Merkle
+root, block link, and quorum signature. On a ledger with roughly 9,600 events,
+that verification took about 13 seconds. The previous recovery checker used a
+fixed five-second HTTP read timeout and therefore reported a false `ReadTimeout`
+after a successful gateway restart. Version 0.4 waits for gateway health first
+and then assigns a size-aware verification timeout of 60 to 300 seconds.
 
 ### Why the previous PowerShell script failed
 

@@ -234,26 +234,85 @@ class Database:
             (limit,),
         )
 
-    def device_activity(self) -> dict[str, dict[str, int | None]]:
-        rows = self.execute_read(
-            """
-            SELECT d.device_id, d.last_sequence, MAX(e.received_at_ms) AS last_event_at_ms
-            FROM devices AS d
-            LEFT JOIN events AS e ON e.device_id = d.device_id
-            GROUP BY d.device_id, d.last_sequence
-            """
-        )
-        return {
-            row["device_id"]: {
+    def device_activity(self, *, window_ms: int = 60_000) -> dict[str, dict]:
+        """Return the latest telemetry and short-window activity for every device.
+
+        The query deliberately uses the most recent database row rather than only
+        the device checkpoint so the monitoring UI can display the actual sensor
+        values, finality state, clock lag, and recent event rate.
+        """
+
+        with self.connect() as connection:
+            now_ms = int(
+                connection.execute(
+                    "SELECT CAST(strftime('%s','now') AS INTEGER) * 1000"
+                ).fetchone()[0]
+            )
+            rows = list(
+                connection.execute(
+                    """
+                    SELECT
+                        d.device_id,
+                        d.status,
+                        d.last_sequence,
+                        e.event_type,
+                        e.payload_cbor,
+                        e.device_time_ms,
+                        e.received_at_ms,
+                        e.block_height,
+                        e.finalized,
+                        COALESCE(r.events_in_window, 0) AS events_in_window
+                    FROM devices AS d
+                    LEFT JOIN events AS e
+                      ON e.rowid = (
+                          SELECT latest.rowid
+                          FROM events AS latest
+                          WHERE latest.device_id = d.device_id
+                          ORDER BY latest.received_at_ms DESC, latest.rowid DESC
+                          LIMIT 1
+                      )
+                    LEFT JOIN (
+                        SELECT device_id, COUNT(*) AS events_in_window
+                        FROM events
+                        WHERE received_at_ms >= ?
+                        GROUP BY device_id
+                    ) AS r ON r.device_id = d.device_id
+                    ORDER BY d.device_id
+                    """,
+                    (now_ms - max(int(window_ms), 1),),
+                ).fetchall()
+            )
+        result: dict[str, dict] = {}
+        for row in rows:
+            result[row["device_id"]] = {
+                "status": row["status"],
                 "last_sequence": int(row["last_sequence"]),
-                "last_event_at_ms": (
-                    int(row["last_event_at_ms"])
-                    if row["last_event_at_ms"] is not None
+                "event_type": row["event_type"],
+                "payload_cbor": row["payload_cbor"],
+                "device_time_ms": (
+                    int(row["device_time_ms"])
+                    if row["device_time_ms"] is not None
                     else None
                 ),
+                "last_event_at_ms": (
+                    int(row["received_at_ms"])
+                    if row["received_at_ms"] is not None
+                    else None
+                ),
+                "block_height": (
+                    int(row["block_height"])
+                    if row["block_height"] is not None
+                    else None
+                ),
+                "finalized": (
+                    bool(row["finalized"])
+                    if row["finalized"] is not None
+                    else None
+                ),
+                "events_in_window": int(row["events_in_window"]),
+                "window_ms": max(int(window_ms), 1),
             }
-            for row in rows
-        }
+        return result
 
     def statistics(self) -> dict[str, int]:
         with self.connect() as connection:
