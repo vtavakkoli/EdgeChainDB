@@ -34,35 +34,32 @@ The gateway chain detects:
 
 ```mermaid
 flowchart LR
-    D[IoT Device]
+    subgraph Device["IoT Device Hash Chain"]
+        direction LR
+        E1["Signed Event #N-1"]
+        E2["Signed Event #N"]
+        E3["Signed Event #N+1"]
 
-    E1[Signed Event #1]
-    E2[Signed Event #2]
-    E3[Signed Event #3]
+        E1 -->|previous-event hash| E2
+        E2 -->|previous-event hash| E3
+    end
 
-    G[Validating Edge Gateway]
-    P[Verified Pending Event Pool]
+    E3 --> G["Validating<br/>Edge Gateway"]
+    G --> P["Verified Pending<br/>Event Pool"]
 
-    B1[Merkle Block N-1]
-    B2[Merkle Block N]
-    B3[Merkle Block N+1]
+    subgraph Ledger["Hash-Linked Merkle Ledger"]
+        direction LR
+        B1["Block N-1<br/>Merkle Root"]
+        B2["Block N<br/>Merkle Root"]
+        B3["Block N+1<br/>Merkle Root"]
 
-    Q[2-of-3 Authority Quorum]
-    L[Finalized Queryable Ledger]
+        B1 --> B2
+        B2 --> B3
+    end
 
-    D --> E1
-    E1 --> E2
-    E2 --> E3
-
-    E3 -->|Device Micro-Chain| G
-    G --> P
-    P --> B2
-
-    B1 --> B2
-    B2 --> B3
-
-    B2 --> Q
-    Q --> L
+    P -->|batch verified events| B2
+    B2 --> Q["2-of-3<br/>Authority Quorum"]
+    Q --> L["Finalized<br/>Queryable Ledger"]
 ```
 
 ## Security choices
