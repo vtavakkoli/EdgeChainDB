@@ -313,29 +313,7 @@ result/logs/test.log
 The latest completed report is also linked from the dashboard and served at
 `http://localhost:3030/benchmark/report`.
 
-### Fixed restart-verification timeout
 
-Full ledger verification validates every signature, device micro-chain, Merkle
-root, block link, and quorum signature. On a ledger with roughly 9,600 events,
-that verification took about 13 seconds. The previous recovery checker used a
-fixed five-second HTTP read timeout and therefore reported a false `ReadTimeout`
-after a successful gateway restart. Version 0.4 waits for gateway health first
-and then assigns a size-aware verification timeout of 60 to 300 seconds.
-
-### Why the previous PowerShell script failed
-
-The device containers are one-shot in the old test workflow. A successful
-container could finish before this command ran:
-
-```powershell
-docker compose ps -q device-02
-```
-
-By default, `docker compose ps -q` returns only running containers. Therefore,
-`device-02` existed and exited successfully, but the script interpreted the
-empty lookup as “No container found.” The corrected scripts query the one-shot
-`test` container with `--all`, and the benchmark no longer performs a fragile
-per-device container lookup.
 
 ### Development security note
 
