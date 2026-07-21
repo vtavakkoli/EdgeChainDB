@@ -4,10 +4,10 @@ from edgechaindb.experiments.model import load_plan
 from edgechaindb.experiments.report import write_result_artifacts
 
 
-def test_full_matrix_config_is_packaged_and_loadable():
-    plan = load_plan(Path("experiments/full-matrix.yaml"))
-    assert plan.runs == 24000
-    assert plan.execution.image == "edgechaindb:0.8.2"
+def test_one_day_config_is_packaged_and_loadable():
+    plan = load_plan(Path("experiments/one-day.yaml"))
+    assert plan.runs == 180
+    assert plan.execution.image == "edgechaindb:0.8.3"
 
 
 def test_empty_campaign_creates_comprehensive_report_immediately(tmp_path):

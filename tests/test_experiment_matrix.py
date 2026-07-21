@@ -14,11 +14,11 @@ from edgechaindb.experiments.worker import run_worker
 from edgechaindb.system_test import start_local_server, stop_local_server
 
 
-def test_full_matrix_has_required_24000_runs_and_event_volume():
+def test_reduced_event_full_matrix_has_required_24000_runs():
     plan = load_plan("experiments/full-matrix.yaml")
     assert plan.configurations == 4800
     assert plan.runs == 24000
-    assert plan.nominal_events == 6_666_000_000
+    assert plan.nominal_events == 66_660_000
     assert [value.label for value in plan.authority_thresholds] == [
         "1-of-1",
         "2-of-3",
@@ -33,7 +33,7 @@ def test_full_matrix_has_required_24000_runs_and_event_volume():
 def test_ten_repetition_plan_has_48000_runs():
     plan = load_plan("experiments/preferred-10-repetitions.yaml")
     assert plan.runs == 48000
-    assert plan.nominal_events == 13_332_000_000
+    assert plan.nominal_events == 133_320_000
 
 
 def test_plan_and_result_reports_are_separate_and_complete(tmp_path: Path):
@@ -85,6 +85,50 @@ def test_plan_and_result_reports_are_separate_and_complete(tmp_path: Path):
     ):
         assert (tmp_path / name).exists(), name
 
+
+
+def test_one_day_balanced_screening_plan_covers_every_level_exactly():
+    from collections import Counter
+
+    plan = load_plan("experiments/one-day.yaml")
+    assert plan.design.type == "balanced_screening"
+    assert plan.configurations == 60
+    assert plan.runs == 180
+    assert plan.nominal_events == 499_950
+    assert plan.nominal_outage_seconds == 20_100
+    rows = plan.selected_configurations
+    assert len(rows) == len(set(rows)) == 60
+    assert Counter(row[0] for row in rows) == {1: 12, 5: 12, 20: 12, 50: 12, 100: 12}
+    assert Counter(row[1] for row in rows) == {10: 15, 100: 15, 1000: 15, 10000: 15}
+    assert Counter(row[2] for row in rows) == {1: 12, 16: 12, 64: 12, 256: 12, 1024: 12}
+    assert Counter(row[3].label for row in rows) == {
+        "1-of-1": 15, "2-of-3": 15, "3-of-4": 15, "5-of-7": 15
+    }
+    assert Counter(row[4] for row in rows) == {0.0: 15, 1.0: 15, 5.0: 15, 10.0: 15}
+    assert Counter(row[5] for row in rows) == {5: 20, 30: 20, 300: 20}
+
+
+def test_result_reporting_ignores_rows_from_another_plan(tmp_path: Path):
+    plan = load_plan("experiments/one-day.yaml")
+    current = next(plan.iter_cases())
+    stale = {
+        "run_id": "old-unrelated-run",
+        "status": "PASS",
+        "completed_at": "2026-01-01T00:00:01+00:00",
+        "case": {},
+        "metrics": {},
+    }
+    current_result = {
+        "run_id": current.run_id,
+        "status": "PASS",
+        "completed_at": "2026-01-01T00:00:02+00:00",
+        "case": current.to_dict(),
+        "metrics": {},
+    }
+    summary = write_result_artifacts(plan, [stale, current_result], tmp_path)
+    assert summary["coverage"]["completed_runs"] == 1
+    ignored = json.loads((tmp_path / "ignored-results-from-other-plans.json").read_text())
+    assert ignored[0]["run_id"] == "old-unrelated-run"
 
 def test_gateway_auto_finalizes_multi_authority_quorum(tmp_path: Path):
     app = create_app(
