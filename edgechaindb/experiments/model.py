@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from functools import cached_property
 import hashlib
 import itertools
 import json
+import math
 from pathlib import Path
+import random
 from typing import Any, Iterable
 
 import yaml
@@ -62,7 +65,7 @@ class ExperimentCase:
 
 @dataclass(frozen=True)
 class ExecutionSettings:
-    image: str = "edgechaindb:0.8.2"
+    image: str = "edgechaindb:0.8.3"
     packet_loss_mode: str = "netem"
     gateway_start_timeout_seconds: int = 120
     run_timeout_seconds: int = 7200
@@ -81,6 +84,22 @@ class ExecutionSettings:
 
 
 @dataclass(frozen=True)
+class DesignSettings:
+    """How matrix levels are converted into executable configurations."""
+
+    type: str = "full_factorial"
+    configurations_per_repetition: int | None = None
+    seed: int = 20260721
+    target_runtime_hours: float | None = None
+
+    @classmethod
+    def from_mapping(cls, value: dict[str, Any] | None) -> "DesignSettings":
+        value = value or {}
+        known = {field.name for field in cls.__dataclass_fields__.values()}
+        return cls(**{key: value[key] for key in value if key in known})
+
+
+@dataclass(frozen=True)
 class ExperimentPlan:
     name: str
     repetitions: int
@@ -91,6 +110,7 @@ class ExperimentPlan:
     packet_loss_percent: tuple[float, ...]
     outage_seconds: tuple[int, ...]
     execution: ExecutionSettings
+    design: DesignSettings = DesignSettings()
 
     def validate(self) -> None:
         if self.repetitions < 1:
@@ -120,17 +140,115 @@ class ExperimentPlan:
             value.validate()
         if self.execution.packet_loss_mode not in {"netem", "application", "none"}:
             raise ValueError("packet_loss_mode must be netem, application, or none")
+        if self.design.type not in {"full_factorial", "balanced_screening"}:
+            raise ValueError("design.type must be full_factorial or balanced_screening")
+        if self.design.target_runtime_hours is not None and self.design.target_runtime_hours <= 0:
+            raise ValueError("design.target_runtime_hours must be positive")
+        if self.design.type == "balanced_screening":
+            samples = self.design.configurations_per_repetition
+            if samples is None or samples < 1:
+                raise ValueError(
+                    "balanced_screening requires design.configurations_per_repetition"
+                )
+            full_count = self._full_factorial_count
+            if samples > full_count:
+                raise ValueError(
+                    "design.configurations_per_repetition cannot exceed the full factorial size"
+                )
+            for name, values in self._axes:
+                if samples % len(values) != 0:
+                    raise ValueError(
+                        f"balanced_screening size {samples} must be divisible by "
+                        f"the {len(values)} levels of {name}"
+                    )
+
+    @property
+    def _axes(self) -> tuple[tuple[str, tuple[Any, ...]], ...]:
+        return (
+            ("devices", tuple(self.devices)),
+            ("events", tuple(self.events)),
+            ("block_size", tuple(self.block_sizes)),
+            ("authority_threshold", tuple(self.authority_thresholds)),
+            ("packet_loss_percent", tuple(self.packet_loss_percent)),
+            ("outage_seconds", tuple(self.outage_seconds)),
+        )
+
+    @property
+    def _full_factorial_count(self) -> int:
+        result = 1
+        for _, values in self._axes:
+            result *= len(values)
+        return result
+
+    @cached_property
+    def selected_configurations(self) -> tuple[tuple[Any, ...], ...]:
+        """Return factor tuples without the repetition dimension.
+
+        The balanced screening design keeps exact marginal coverage for every
+        factor while selecting a deterministic, low-correlation subset of the
+        full factorial. It searches several independently shuffled balanced
+        column designs and retains the one with the lowest pairwise imbalance.
+        """
+        axes = [values for _, values in self._axes]
+        if self.design.type == "full_factorial":
+            return tuple(itertools.product(*axes))
+
+        sample_count = int(self.design.configurations_per_repetition or 0)
+        best_rows: tuple[tuple[Any, ...], ...] | None = None
+        best_score: float | None = None
+        attempts = 512
+
+        for attempt in range(attempts):
+            rng = random.Random(self.design.seed + attempt * 104729)
+            columns: list[list[Any]] = []
+            for values in axes:
+                repeats = sample_count // len(values)
+                column = list(values) * repeats
+                rng.shuffle(column)
+                columns.append(column)
+            rows = tuple(tuple(column[index] for column in columns) for index in range(sample_count))
+            if len(set(rows)) != sample_count:
+                continue
+
+            score = 0.0
+            for left in range(len(axes)):
+                for right in range(left + 1, len(axes)):
+                    pair_counts: dict[tuple[Any, Any], int] = {
+                        (a, b): 0 for a in axes[left] for b in axes[right]
+                    }
+                    for row in rows:
+                        pair_counts[(row[left], row[right])] += 1
+                    ideal = sample_count / (len(axes[left]) * len(axes[right]))
+                    score += sum((count - ideal) ** 2 for count in pair_counts.values())
+            if best_score is None or score < best_score:
+                best_rows = rows
+                best_score = score
+                if math.isclose(score, 0.0):
+                    break
+
+        if best_rows is None:
+            raise RuntimeError("could not generate a unique balanced screening design")
+
+        # Execute shorter outages and smaller event counts first so users get
+        # useful results and an ETA quickly while the campaign remains resumable.
+        return tuple(
+            sorted(
+                best_rows,
+                key=lambda row: (
+                    int(row[5]),  # outage
+                    int(row[1]),  # events
+                    int(row[0]),  # devices
+                    int(row[2]),  # block size
+                    float(row[4]),
+                    row[3].authorities,
+                    row[3].threshold,
+                ),
+            )
+        )
 
     @property
     def configurations(self) -> int:
-        return (
-            len(self.devices)
-            * len(self.events)
-            * len(self.block_sizes)
-            * len(self.authority_thresholds)
-            * len(self.packet_loss_percent)
-            * len(self.outage_seconds)
-        )
+        return len(self.selected_configurations)
 
     @property
     def runs(self) -> int:
@@ -138,54 +256,31 @@ class ExperimentPlan:
 
     @property
     def nominal_events(self) -> int:
-        multiplier = (
-            len(self.devices)
-            * len(self.block_sizes)
-            * len(self.authority_thresholds)
-            * len(self.packet_loss_percent)
-            * len(self.outage_seconds)
-            * self.repetitions
-        )
-        return sum(self.events) * multiplier
+        return sum(int(row[1]) for row in self.selected_configurations) * self.repetitions
 
     @property
     def nominal_outage_seconds(self) -> int:
-        multiplier = (
-            len(self.devices)
-            * len(self.events)
-            * len(self.block_sizes)
-            * len(self.authority_thresholds)
-            * len(self.packet_loss_percent)
-            * self.repetitions
-        )
-        return sum(self.outage_seconds) * multiplier
+        return sum(int(row[5]) for row in self.selected_configurations) * self.repetitions
 
     def iter_cases(self) -> Iterable[ExperimentCase]:
-        values = itertools.product(
-            self.devices,
-            self.events,
-            self.block_sizes,
-            self.authority_thresholds,
-            self.packet_loss_percent,
-            self.outage_seconds,
-            range(1, self.repetitions + 1),
-        )
-        for devices, events, block_size, authority, loss, outage, repetition in values:
-            yield ExperimentCase(
-                devices=devices,
-                events=events,
-                block_size=block_size,
-                authorities=authority.authorities,
-                threshold=authority.threshold,
-                packet_loss_percent=float(loss),
-                outage_seconds=int(outage),
-                repetition=repetition,
-            )
+        for devices, events, block_size, authority, loss, outage in self.selected_configurations:
+            for repetition in range(1, self.repetitions + 1):
+                yield ExperimentCase(
+                    devices=int(devices),
+                    events=int(events),
+                    block_size=int(block_size),
+                    authorities=authority.authorities,
+                    threshold=authority.threshold,
+                    packet_loss_percent=float(loss),
+                    outage_seconds=int(outage),
+                    repetition=repetition,
+                )
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "repetitions": self.repetitions,
+            "design": asdict(self.design),
             "matrix": {
                 "devices": list(self.devices),
                 "events": list(self.events),
@@ -199,10 +294,13 @@ class ExperimentPlan:
             },
             "execution": asdict(self.execution),
             "summary": {
+                "design_type": self.design.type,
+                "full_factorial_configurations": self._full_factorial_count,
                 "configurations": self.configurations,
                 "runs": self.runs,
                 "nominal_events": self.nominal_events,
                 "nominal_outage_seconds": self.nominal_outage_seconds,
+                "target_runtime_hours": self.design.target_runtime_hours,
             },
         }
 
@@ -240,6 +338,7 @@ def load_plan(path: str | Path, *, repetitions_override: int | None = None) -> E
         packet_loss_percent=tuple(float(item) for item in matrix.get("packet_loss_percent", [])),
         outage_seconds=_tuple_int(matrix.get("outage_seconds"), "outage_seconds"),
         execution=ExecutionSettings.from_mapping(raw.get("execution")),
+        design=DesignSettings.from_mapping(raw.get("design")),
     )
     plan.validate()
     return plan

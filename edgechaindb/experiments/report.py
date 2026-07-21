@@ -104,14 +104,22 @@ def flatten_result(result: dict[str, Any]) -> dict[str, Any]:
 
 def write_plan_artifacts(plan: ExperimentPlan, output_dir: Path) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
+    if plan.design.type == "balanced_screening":
+        warnings = [
+            "This is a balanced screening design, not a complete full-factorial interaction study.",
+            "Every requested factor level receives exact marginal coverage in each repetition; pairwise combinations are balanced heuristically.",
+            "Use the full-matrix or large-scale configuration only after the screening report identifies configurations that need confirmation.",
+        ]
+    else:
+        warnings = [
+            "The full factorial campaign can be large even with reduced event counts. Use shards and --resume.",
+            "Five-minute outages create unavoidable wall-clock delay in every crossed configuration.",
+            "The matrix pairs authority counts with the requested thresholds; it does not cross every threshold with every authority count.",
+        ]
     payload = {
         "generated_at": utc_now(),
         **plan.to_dict(),
-        "warnings": [
-            "The full five-repetition matrix is a large campaign. Use shards and --resume.",
-            "One-million-event runs and five-minute outages should be scheduled on dedicated Docker hosts with adequate disk capacity.",
-            "The matrix pairs authority counts with the requested thresholds; it does not cross every threshold with every authority count.",
-        ],
+        "warnings": warnings,
     }
     (output_dir / "matrix-plan.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
     rows = [case.to_dict() for case in plan.iter_cases()]
@@ -126,6 +134,10 @@ def _render_plan_html(payload: dict[str, Any]) -> str:
     summary = payload["summary"]
     warning_items = "".join(f"<li>{html.escape(item)}</li>" for item in payload.get("warnings", []))
     rows = [
+        ("Design", payload.get("design", {}).get("type", "full_factorial")),
+        ("Target runtime", f"{payload.get('design', {}).get('target_runtime_hours')} h" if payload.get("design", {}).get("target_runtime_hours") else "not specified"),
+        ("Full-factorial configurations", summary.get("full_factorial_configurations")),
+        ("Selected configurations", summary["configurations"]),
         ("Devices", matrix["devices"]),
         ("Events", matrix["events"]),
         ("Block size", matrix["block_size"]),
@@ -265,7 +277,16 @@ def write_result_artifacts(
         previous = latest.get(run_id)
         if previous is None or str(item.get("completed_at", "")) >= str(previous.get("completed_at", "")):
             latest[run_id] = item
-    canonical_results = sorted(latest.values(), key=lambda item: str(item.get("run_id"))) + anonymous
+    planned_run_ids = {case.run_id for case in plan.iter_cases()}
+    stale_results = [item for run_id, item in latest.items() if run_id not in planned_run_ids]
+    canonical_results = sorted(
+        (item for run_id, item in latest.items() if run_id in planned_run_ids),
+        key=lambda item: str(item.get("run_id")),
+    ) + anonymous
+    if stale_results:
+        (output_dir / "ignored-results-from-other-plans.json").write_text(
+            json.dumps(stale_results, indent=2), encoding="utf-8"
+        )
     rows = [flatten_result(item) for item in canonical_results]
     _write_csv(output_dir / "results.csv", rows)
     (output_dir / "results.json").write_text(json.dumps(canonical_results, indent=2), encoding="utf-8")
@@ -353,6 +374,9 @@ def _render_results_html(summary: dict[str, Any], rows: list[dict[str, Any]]) ->
     matrix_rows = "".join(
         f"<tr><th>{html.escape(label)}</th><td>{html.escape(json.dumps(value))}</td></tr>"
         for label, value in (
+            ("Design", plan.get("design", {}).get("type", "full_factorial")),
+            ("Target runtime (h)", plan.get("design", {}).get("target_runtime_hours")),
+            ("Selected configurations", plan.get("summary", {}).get("configurations")),
             ("Devices", matrix["devices"]),
             ("Events", matrix["events"]),
             ("Block sizes", matrix["block_size"]),

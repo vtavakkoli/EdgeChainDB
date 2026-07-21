@@ -98,7 +98,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Dynamically provision Docker gateways/devices and execute the EdgeChainDB experimental matrix"
     )
-    parser.add_argument("--config", default="/app/experiments/full-matrix.yaml")
+    parser.add_argument("--config", default="/app/experiments/one-day.yaml")
     parser.add_argument("--result-dir", default="/result/experiments")
     parser.add_argument("--repetitions", type=int, help="override the YAML repetition count")
     parser.add_argument("--dry-run", action="store_true", help="expand and report the matrix without starting Docker containers")
