@@ -10,7 +10,7 @@ matrix:
   packet_loss_percent: [0, 5]
   outage_seconds: [0, 5]
 execution:
-  image: edgechaindb:0.7.0
+  image: edgechaindb:0.8.0
   packet_loss_mode: application
   gateway_start_timeout_seconds: 90
   run_timeout_seconds: 900
