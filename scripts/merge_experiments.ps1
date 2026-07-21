@@ -1,5 +1,5 @@
 param(
-    [string]$Config = "full-matrix.yaml",
+    [string]$Config = "one-day.yaml",
     [string]$InputPattern = "/result/experiments/shard-*",
     [string]$Output = "/result/experiments/combined"
 )

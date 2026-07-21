@@ -1,5 +1,5 @@
 param(
-    [string]$Config = "full-matrix.yaml",
+    [string]$Config = "one-day.yaml",
     [int]$Repetitions = 0
 )
 $ErrorActionPreference = "Stop"

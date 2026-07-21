@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 set -eu
-CONFIG="${CONFIG:-full-matrix.yaml}"
+CONFIG="${CONFIG:-one-day.yaml}"
 INPUT="${INPUT:-/result/experiments/shard-*}"
 OUTPUT="${OUTPUT:-/result/experiments/combined}"
 docker compose --profile experiment run --rm experiment \

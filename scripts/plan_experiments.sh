@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 set -eu
-CONFIG="${1:-full-matrix.yaml}"
+CONFIG="${1:-one-day.yaml}"
 REPETITIONS="${2:-}"
 set -- docker compose --profile experiment run --rm experiment \
   python -m edgechaindb.experiments.runner \

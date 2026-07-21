@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 set -eu
-CONFIG="${CONFIG:-full-matrix.yaml}"
+CONFIG="${CONFIG:-one-day.yaml}"
 SHARD_COUNT="${SHARD_COUNT:-1}"
 SHARD_INDEX="${SHARD_INDEX:-0}"
 MAX_RUNS="${MAX_RUNS:-}"

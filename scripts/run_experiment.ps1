@@ -3,7 +3,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-Write-Host "Building EdgeChainDB 0.8.2 and starting the experiment campaign detached..." -ForegroundColor Cyan
+Write-Host "Building EdgeChainDB 0.8.3 and starting the one-day experiment campaign detached..." -ForegroundColor Cyan
 docker compose up --build -d experiment
 if ($LASTEXITCODE -ne 0) { throw "docker compose failed" }
 
