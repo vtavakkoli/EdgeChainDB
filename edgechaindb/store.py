@@ -61,7 +61,8 @@ CREATE TABLE IF NOT EXISTS blocks (
     quorum_threshold INTEGER NOT NULL,
     policy_hash BLOB NOT NULL,
     version INTEGER NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('proposed', 'finalized'))
+    status TEXT NOT NULL CHECK (status IN ('proposed', 'finalized')),
+    finalized_at_ms INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS block_events (
@@ -114,6 +115,9 @@ class Database:
             connection.execute("PRAGMA journal_mode = WAL")
             connection.execute("PRAGMA synchronous = NORMAL")
             connection.executescript(SCHEMA)
+            block_columns = {row[1] for row in connection.execute("PRAGMA table_info(blocks)")}
+            if "finalized_at_ms" not in block_columns:
+                connection.execute("ALTER TABLE blocks ADD COLUMN finalized_at_ms INTEGER")
 
     def execute_read(self, sql: str, parameters: tuple = ()) -> list[sqlite3.Row]:
         with self.connect() as connection:
@@ -647,8 +651,12 @@ class Database:
                         raise RuntimeError("previous block is not finalized")
 
                     connection.execute(
-                        "UPDATE blocks SET status = 'finalized' WHERE height = ?",
-                        (height,),
+                        """
+                        UPDATE blocks
+                        SET status = 'finalized', finalized_at_ms = COALESCE(finalized_at_ms, ?)
+                        WHERE height = ?
+                        """,
+                        (signed_at_ms, height),
                     )
                     connection.execute(
                         "UPDATE events SET finalized = 1 WHERE block_height = ?",

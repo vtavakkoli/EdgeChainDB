@@ -34,6 +34,8 @@ async def serve_dual_port(
     node_id: str,
     quorum_threshold: int,
     batch_size: int,
+    authority_count: int,
+    authority_key_dir: str,
     host: str,
     api_port: int,
     monitor_port: int,
@@ -52,6 +54,8 @@ async def serve_dual_port(
         node_id=node_id,
         quorum_threshold=quorum_threshold,
         batch_size=batch_size,
+        authority_count=authority_count,
+        authority_key_dir=authority_key_dir,
     )
     app.state.api_port = api_port
     app.state.monitor_port = monitor_port
@@ -121,6 +125,8 @@ def main() -> None:
     parser.add_argument("--node-id", default="edge-gateway-1")
     parser.add_argument("--quorum", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--authorities", type=int, default=int(os.getenv("EDGECHAIN_AUTHORITIES", "1")))
+    parser.add_argument("--authority-key-dir", default=os.getenv("EDGECHAIN_AUTHORITY_KEY_DIR", "/data/authorities"))
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--api-port", type=int, default=8000)
     parser.add_argument("--monitor-port", type=int, default=3030)
@@ -139,6 +145,8 @@ def main() -> None:
             node_id=args.node_id,
             quorum_threshold=args.quorum,
             batch_size=args.batch_size,
+            authority_count=args.authorities,
+            authority_key_dir=args.authority_key_dir,
             host=args.host,
             api_port=args.api_port,
             monitor_port=args.monitor_port,

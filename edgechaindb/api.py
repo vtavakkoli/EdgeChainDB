@@ -58,6 +58,8 @@ def create_app(
     node_id: str | None = None,
     quorum_threshold: int | None = None,
     batch_size: int | None = None,
+    authority_count: int | None = None,
+    authority_key_dir: str | None = None,
 ) -> FastAPI:
     database_path = database_path or os.getenv("EDGECHAIN_DB", "edgechain.db")
     node_key_path = node_key_path or os.getenv(
@@ -66,15 +68,34 @@ def create_app(
     node_id = node_id or os.getenv("EDGECHAIN_NODE_ID", "edge-gateway-1")
     quorum_threshold = quorum_threshold or int(os.getenv("EDGECHAIN_QUORUM", "1"))
     batch_size = batch_size or int(os.getenv("EDGECHAIN_BATCH_SIZE", "64"))
+    authority_count = authority_count or int(os.getenv("EDGECHAIN_AUTHORITIES", "1"))
+    authority_key_dir = authority_key_dir or os.getenv(
+        "EDGECHAIN_AUTHORITY_KEY_DIR",
+        str(Path(node_key_path).parent / "authorities"),
+    )
+    if authority_count < 1:
+        raise ValueError("authority_count must be at least one")
+    if quorum_threshold > authority_count:
+        raise ValueError(
+            f"quorum threshold {quorum_threshold} exceeds authority count {authority_count}"
+        )
 
     database = Database(database_path)
     ledger = EdgeChainLedger(database, quorum_threshold=quorum_threshold)
     node_key = KeyPair.load_or_create(node_key_path)
+    authority_keys: list[tuple[str, KeyPair]] = [(node_id, node_key)]
     ledger.register_authority(node_id, node_key.public_bytes)
+    key_root = Path(authority_key_dir)
+    key_root.mkdir(parents=True, exist_ok=True)
+    for index in range(2, authority_count + 1):
+        authority_id = f"{node_id}-authority-{index:02d}"
+        authority_key = KeyPair.load_or_create(key_root / f"authority-{index:02d}.key")
+        ledger.register_authority(authority_id, authority_key.public_bytes)
+        authority_keys.append((authority_id, authority_key))
 
     app = FastAPI(
         title="EdgeChainDB",
-        version="0.6.0",
+        version="0.7.0",
         description=(
             "Edge-first, signed and quorum-finalized IoT telemetry ledger with a "
             "development cluster monitor. Administrative endpoints require strong "
@@ -86,6 +107,9 @@ def create_app(
     app.state.node_key = node_key
     app.state.node_id = node_id
     app.state.batch_size = batch_size
+    app.state.authority_keys = authority_keys
+    app.state.authority_count = authority_count
+    app.state.quorum_threshold = quorum_threshold
     app.state.seal_lock = threading.Lock()
     app.state.cluster_controller = DockerClusterController()
     app.state.result_dir = Path(os.getenv("EDGECHAIN_RESULT_DIR", "result"))
@@ -99,8 +123,37 @@ def create_app(
         node_id=node_id,
         quorum_threshold=quorum_threshold,
         batch_size=batch_size,
+        authority_count=authority_count,
         monitor_url="http://localhost:3030",
     )
+
+    def propose_and_finalize(max_events: int) -> dict[str, Any]:
+        result = ledger.propose_block(
+            app.state.node_id,
+            app.state.node_key.private_key,
+            max_events=max_events,
+        )
+        status = str(result["status"])
+        if status != "finalized":
+            for authority_id, authority_key in app.state.authority_keys[1:]:
+                status = ledger.sign_block(
+                    int(result["height"]), authority_id, authority_key.private_key
+                )
+                if status == "finalized":
+                    break
+        block = database.block(int(result["height"]))
+        result["status"] = status
+        result["signatures"] = len(database.block_signatures(int(result["height"])))
+        result["required_signatures"] = app.state.quorum_threshold
+        if block is not None:
+            finalized_at = block["finalized_at_ms"]
+            result["finalized_at_ms"] = finalized_at
+            result["finalization_latency_ms"] = (
+                int(finalized_at) - int(block["created_at_ms"])
+                if finalized_at is not None
+                else None
+            )
+        return result
 
     @app.middleware("http")
     async def request_log_middleware(request: Request, call_next):
@@ -181,6 +234,8 @@ def create_app(
             **database.statistics(),
             "open_proposal": open_proposal,
             "cluster_control_available": app.state.cluster_controller.available,
+            "authority_count": app.state.authority_count,
+            "quorum_threshold": app.state.quorum_threshold,
         }
 
     @app.get("/stats")
@@ -254,11 +309,7 @@ def create_app(
                         database.pending_count() >= app.state.batch_size
                         and database.proposed_block() is None
                     ):
-                        accepted["block"] = ledger.propose_block(
-                            app.state.node_id,
-                            app.state.node_key.private_key,
-                            max_events=app.state.batch_size,
-                        )
+                        accepted["block"] = propose_and_finalize(app.state.batch_size)
                         gateway_log.info(
                             "block_auto_sealed",
                             **accepted["block"],
@@ -278,11 +329,7 @@ def create_app(
     def seal_block(max_events: int = 256) -> dict[str, Any]:
         try:
             with app.state.seal_lock:
-                result = ledger.propose_block(
-                    app.state.node_id,
-                    app.state.node_key.private_key,
-                    max_events=max_events,
-                )
+                result = propose_and_finalize(max_events)
             gateway_log.info("block_manually_sealed", **result)
             return result
         except Exception as exc:
@@ -318,6 +365,8 @@ def create_app(
                     "status": row["status"],
                     "signature_count": len(database.block_signatures(row["height"])),
                     "quorum_threshold": row["quorum_threshold"],
+                    "finalized_at_ms": row["finalized_at_ms"],
+                    "finalization_latency_ms": (int(row["finalized_at_ms"]) - int(row["created_at_ms"])) if row["finalized_at_ms"] is not None else None,
                 }
             )
         return result
@@ -604,6 +653,55 @@ def create_app(
             raise HTTPException(status_code=404, detail="benchmark artifact does not exist")
         media_type = "application/json" if path.suffix == ".json" else "text/csv"
         return FileResponse(path, media_type=media_type, filename=safe_name)
+
+    def _experiment_artifact(name: str) -> Path:
+        candidates = [
+            app.state.result_dir / "experiments" / "combined" / name,
+            app.state.result_dir / "experiments" / name,
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return candidates[0]
+
+    @app.get("/experiments/progress")
+    def experiment_progress() -> dict[str, Any]:
+        path = _experiment_artifact("progress.json")
+        if not path.exists():
+            return {"status": "not_started"}
+        try:
+            import json
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.get("/experiments/summary")
+    def experiment_summary() -> dict[str, Any]:
+        path = _experiment_artifact("summary.json")
+        if not path.exists():
+            return {"status": "not_started", "coverage": {}}
+        try:
+            import json
+            return {"status": "available", **json.loads(path.read_text(encoding="utf-8"))}
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.get("/experiments/report", include_in_schema=False)
+    def experiment_report() -> FileResponse:
+        path = _experiment_artifact("report.html")
+        if not path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail="No matrix report exists yet. Run scripts/run_experiments or merge_experiments.",
+            )
+        return FileResponse(path, media_type="text/html")
+
+    @app.get("/experiments/plan", include_in_schema=False)
+    def experiment_plan_report() -> FileResponse:
+        path = _experiment_artifact("matrix-plan.html")
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="No matrix plan exists yet.")
+        return FileResponse(path, media_type="text/html")
 
     @app.get("/proofs/{event_hash}")
     def event_proof(event_hash: str) -> dict[str, Any]:
