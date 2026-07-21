@@ -95,7 +95,7 @@ def create_app(
 
     app = FastAPI(
         title="EdgeChainDB",
-        version="0.8.2",
+        version="0.8.3",
         description=(
             "Edge-first, signed and quorum-finalized IoT telemetry ledger with a "
             "development cluster monitor. Administrative endpoints require strong "
