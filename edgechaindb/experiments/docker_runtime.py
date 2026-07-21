@@ -66,6 +66,7 @@ class GatewayResourceSampler:
         self.memory_peak_bytes = 0
         self.cpu_percent_peak = 0.0
         self.samples = 0
+        self.sample_errors = 0
         self.network_rx_bytes = 0
         self.network_tx_bytes = 0
 
@@ -89,7 +90,11 @@ class GatewayResourceSampler:
                 self.network_tx_bytes = max(self.network_tx_bytes, sum(int(item.get("tx_bytes", 0)) for item in networks.values()))
                 self.samples += 1
             except Exception:
-                return
+                # A configured outage stops the gateway container temporarily.
+                # Resource sampling must survive that expected interruption and
+                # continue after the same container is started again.
+                self.sample_errors += 1
+                continue
 
     def start(self) -> None:
         self.thread.start()
@@ -99,6 +104,7 @@ class GatewayResourceSampler:
         self.thread.join(timeout=5)
         return {
             "samples": self.samples,
+            "sample_errors": self.sample_errors,
             "memory_peak_bytes": self.memory_peak_bytes,
             "cpu_percent_peak": round(self.cpu_percent_peak, 3),
             "network_rx_bytes": self.network_rx_bytes,
@@ -144,6 +150,58 @@ class DynamicDockerExperiment:
         base, remainder = divmod(total, devices)
         return [base + (1 if index < remainder else 0) for index in range(devices)]
 
+    @staticmethod
+    def _gateway_environment(case: ExperimentCase) -> dict[str, str]:
+        # The matrix runner owns Docker lifecycle. Dynamic gateways intentionally
+        # do not receive the Docker socket and therefore must not initialize the
+        # dashboard's Compose controller. Ledger/API observability remains active.
+        return {
+            "EDGECHAIN_LOG_LEVEL": "WARNING",
+            "EDGECHAIN_CLUSTER_CONTROL_ENABLED": "0",
+            "EDGECHAIN_EXPERIMENT_RUN_ID": case.run_id,
+        }
+
+    def _cleanup_stale_case_resources(self, case: ExperimentCase) -> dict[str, int]:
+        """Remove resources left by an interrupted attempt of the same run.
+
+        `docker compose up` in attached mode stops the experiment runner on
+        Ctrl+C, but dynamically provisioned containers are not Compose services.
+        They can therefore outlive the runner. A resumed campaign must remove
+        those labelled resources before recreating deterministic names.
+        """
+        label = f"edgechaindb.experiment={case.run_id}"
+        removed = {"containers": 0, "networks": 0, "volumes": 0}
+
+        for container in self.client.containers.list(all=True, filters={"label": label}):
+            try:
+                container.remove(force=True, v=True)
+                removed["containers"] += 1
+            except NotFound:
+                pass
+
+        for network in self.client.networks.list(filters={"label": label}):
+            if self.runner_container is not None:
+                try:
+                    network.disconnect(self.runner_container, force=True)
+                except (DockerException, NotFound):
+                    pass
+            try:
+                network.remove()
+                removed["networks"] += 1
+            except NotFound:
+                pass
+
+        for volume in self.client.volumes.list(filters={"label": label}):
+            try:
+                volume.remove(force=True)
+                removed["volumes"] += 1
+            except NotFound:
+                pass
+
+        if any(removed.values()):
+            log.warning("matrix_stale_resources_cleaned", run_id=case.run_id, **removed)
+        return removed
+
     def run(self, case: ExperimentCase, run_dir: Path) -> dict[str, Any]:
         run_dir.mkdir(parents=True, exist_ok=True)
         prefix = f"ecx-{case.case_key[:10]}"
@@ -172,6 +230,7 @@ class DynamicDockerExperiment:
         log.info("matrix_run_provisioning", **case.to_dict())
 
         try:
+            self._cleanup_stale_case_resources(case)
             network = self.client.networks.create(network_name, driver="bridge", internal=True, labels={"edgechaindb.experiment": case.run_id})
             volume = self.client.volumes.create(name=volume_name, labels={"edgechaindb.experiment": case.run_id})
             if self.runner_container is not None:
@@ -206,7 +265,7 @@ class DynamicDockerExperiment:
                 cap_drop=["ALL"],
                 security_opt=["no-new-privileges:true"],
                 labels={"edgechaindb.experiment": case.run_id, "edgechaindb.role": "gateway"},
-                environment={"EDGECHAIN_LOG_LEVEL": "WARNING"},
+                environment=self._gateway_environment(case),
             )
             if self.runner_container is not None:
                 base_url = f"http://{gateway_name}:8000"
@@ -222,9 +281,23 @@ class DynamicDockerExperiment:
             sampler.start()
 
             if case.outage_seconds > 0:
+                log.info(
+                    "matrix_gateway_outage_stop_requested",
+                    run_id=case.run_id,
+                    outage_seconds=case.outage_seconds,
+                    expected_container_exit=True,
+                )
                 gateway.stop(timeout=10)
+                gateway.reload()
                 outage_started_at = time.perf_counter()
-                log.info("matrix_gateway_outage_started", run_id=case.run_id, outage_seconds=case.outage_seconds)
+                log.info(
+                    "matrix_gateway_outage_started",
+                    run_id=case.run_id,
+                    outage_seconds=case.outage_seconds,
+                    gateway_state=gateway.status,
+                    gateway_exit_code=int(gateway.attrs.get("State", {}).get("ExitCode", 0)),
+                    expected_container_exit=True,
+                )
 
             distribution = self._events_per_device(case.events, case.devices)
             reconnect_deadline = case.outage_seconds + self.settings.reconnect_grace_seconds
@@ -263,10 +336,18 @@ class DynamicDockerExperiment:
                 remaining = case.outage_seconds - (time.perf_counter() - (outage_started_at or time.perf_counter()))
                 if remaining > 0:
                     time.sleep(remaining)
+                log.info("matrix_gateway_restart_requested", run_id=case.run_id)
                 gateway.start()
                 gateway_restarted_at = time.perf_counter()
-                self._wait_http(base_url)
-                log.info("matrix_gateway_outage_ended", run_id=case.run_id)
+                restarted_health = self._wait_http(base_url)
+                gateway.reload()
+                log.info(
+                    "matrix_gateway_outage_ended",
+                    run_id=case.run_id,
+                    gateway_state=gateway.status,
+                    gateway_events=int(restarted_health.get("events", 0)),
+                    expected_container_exit=False,
+                )
 
             deadline = time.monotonic() + self.settings.run_timeout_seconds
             active = set(worker.id for worker in workers)
