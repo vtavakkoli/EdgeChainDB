@@ -12,7 +12,7 @@ matrix:
   packet_loss_percent: [0, 1, 5, 10]
   outage_seconds: [5, 30, 300]
 execution:
-  image: edgechaindb:0.8.1
+  image: edgechaindb:0.8.2
   packet_loss_mode: netem
   gateway_start_timeout_seconds: 120
   run_timeout_seconds: 14400
