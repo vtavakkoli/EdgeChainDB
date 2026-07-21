@@ -62,7 +62,7 @@ class ExperimentCase:
 
 @dataclass(frozen=True)
 class ExecutionSettings:
-    image: str = "edgechaindb:0.7.0"
+    image: str = "edgechaindb:0.8.0"
     packet_loss_mode: str = "netem"
     gateway_start_timeout_seconds: int = 120
     run_timeout_seconds: int = 7200

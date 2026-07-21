@@ -29,7 +29,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Merge independently executed EdgeChainDB matrix shards")
     parser.add_argument("--config", default="/app/experiments/full-matrix.yaml")
     parser.add_argument("--input", action="append", required=True, help="directory or glob; may be repeated")
-    parser.add_argument("--output", default="/app/result/experiments/combined")
+    parser.add_argument("--output", default="/result/experiments/combined")
     parser.add_argument("--repetitions", type=int)
     args = parser.parse_args()
 

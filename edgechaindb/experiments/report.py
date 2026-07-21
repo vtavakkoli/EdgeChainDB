@@ -147,9 +147,11 @@ def _render_plan_html(payload: dict[str, Any]) -> str:
 <div class="card metric"><span>Outage time</span><strong>{summary['nominal_outage_seconds']/3600:,.1f} h</strong></div></section>
 <section class="card"><h2>Required factors</h2><table>{table_rows}</table></section>
 <section class="card warning"><h2>Execution guidance</h2><ul>{warning_items}</ul>
-<pre>docker compose --profile experiment run --rm experiment --config /app/experiments/full-matrix.yaml --dry-run
+<pre>docker compose up --build -d experiment
+docker compose logs -f experiment
 
-docker compose --profile experiment run --rm experiment --config /app/experiments/full-matrix.yaml --resume --shard-count 8 --shard-index 0</pre></section>
+Report: result/experiments/report.html
+Progress: result/experiments/progress.json</pre></section>
 </main></body></html>"""
 
 
@@ -245,7 +247,13 @@ def _svg_bar(rows: list[dict[str, Any]], label: str, metric: str, title: str) ->
     return f'<figure><figcaption>{html.escape(title)}</figcaption><svg viewBox="0 0 {width} {height}" role="img"><line x1="{left}" y1="{top+plot_h}" x2="{width-right}" y2="{top+plot_h}"/><text x="12" y="20">{html.escape(label)}</text>{"".join(bars)}</svg></figure>'
 
 
-def write_result_artifacts(plan: ExperimentPlan, results: list[dict[str, Any]], output_dir: Path) -> dict[str, Any]:
+def write_result_artifacts(
+    plan: ExperimentPlan,
+    results: list[dict[str, Any]],
+    output_dir: Path,
+    *,
+    campaign: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     latest: dict[str, dict[str, Any]] = {}
     anonymous: list[dict[str, Any]] = []
@@ -286,6 +294,17 @@ def write_result_artifacts(plan: ExperimentPlan, results: list[dict[str, Any]], 
         },
         "overall_metrics": {},
         "groups": group_payload,
+        "campaign": campaign or {"status": "reporting", "fatal_error": None},
+        "artifacts": {
+            "html_report": "report.html",
+            "progress": "progress.json",
+            "raw_results_jsonl": "journal.jsonl",
+            "canonical_results_json": "results.json",
+            "canonical_results_csv": "results.csv",
+            "plan_html": "matrix-plan.html",
+            "plan_json": "matrix-plan.json",
+            "plan_csv": "matrix-plan.csv",
+        },
     }
     for metric in METRICS:
         summary["overall_metrics"].update(_metric_summary(_numeric(row.get(metric) for row in passed_rows), metric))
@@ -298,6 +317,9 @@ def _render_results_html(summary: dict[str, Any], rows: list[dict[str, Any]]) ->
     coverage = summary["coverage"]
     overall = summary["overall_metrics"]
     groups = summary["groups"]
+    campaign = summary.get("campaign", {}) or {}
+    plan = summary["plan"]
+    matrix = plan["matrix"]
     failed = [row for row in rows if row.get("status") != "PASS"]
     failure_rows = "".join(
         f"<tr><td>{html.escape(str(row.get('run_id')))}</td><td>{html.escape(str(row.get('error')))}</td></tr>"
@@ -322,6 +344,25 @@ def _render_results_html(summary: dict[str, Any], rows: list[dict[str, Any]]) ->
     block_chart = _svg_bar(groups.get("block_size", []), "ms", "finalization_latency_ms_p95", "Mean p95 finalization latency by block size")
     loss_chart = _svg_bar(groups.get("packet_loss", []), "s", "recovery_after_gateway_start_seconds", "Mean recovery time by packet loss")
 
+    campaign_error = campaign.get("fatal_error")
+    campaign_class = "warning" if campaign_error else ""
+    campaign_error_html = (
+        f"<p><strong>Fatal campaign error:</strong> {html.escape(str(campaign_error))}</p>"
+        if campaign_error else ""
+    )
+    matrix_rows = "".join(
+        f"<tr><th>{html.escape(label)}</th><td>{html.escape(json.dumps(value))}</td></tr>"
+        for label, value in (
+            ("Devices", matrix["devices"]),
+            ("Events", matrix["events"]),
+            ("Block sizes", matrix["block_size"]),
+            ("Authority thresholds", [item["label"] for item in matrix["authority_thresholds"]]),
+            ("Packet loss (%)", matrix["packet_loss_percent"]),
+            ("Outage duration (s)", matrix["outage_seconds"]),
+            ("Repetitions", plan["repetitions"]),
+        )
+    )
+
     group_sections: list[str] = []
     for name, grouped in groups.items():
         rows_html = "".join(
@@ -343,6 +384,8 @@ def _render_results_html(summary: dict[str, Any], rows: list[dict[str, Any]]) ->
 <section class=cards><div class="card metric"><span>Completed</span><strong>{coverage['completed_runs']:,}/{coverage['planned_runs']:,}</strong></div>
 <div class="card metric"><span>Passed</span><strong>{coverage['passed_runs']:,}</strong></div><div class="card metric"><span>Failed</span><strong>{coverage['failed_runs']:,}</strong></div>
 <div class="card metric"><span>Completion</span><strong>{coverage['completion_rate']*100:.2f}%</strong></div></section>
+<section class="card {campaign_class}"><h2>Campaign status</h2><p><strong>{html.escape(str(campaign.get('status', 'reporting')).replace('_', ' ').title())}</strong></p>{campaign_error_html}<p>Reports are canonicalized by run ID, so retries do not inflate repetition counts or confidence intervals.</p></section>
+<section class=card><h2>Experimental matrix</h2><table>{matrix_rows}</table></section>
 <section class=card><h2>Overall performance</h2><table><thead><tr><th>Metric</th><th>Mean</th><th>Median</th><th>95% CI of mean</th></tr></thead><tbody>{''.join(summary_rows)}</tbody></table></section>
 <section class="chart-grid card"><div>{device_chart}</div><div>{block_chart}</div><div>{loss_chart}</div></section>
 {''.join(group_sections)}
