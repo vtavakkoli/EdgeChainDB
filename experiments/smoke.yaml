@@ -1,0 +1,22 @@
+name: EdgeChainDB dynamic Docker smoke matrix
+repetitions: 1
+matrix:
+  devices: [1, 5]
+  events: [100, 500]
+  block_size: [16, 64]
+  authority_thresholds:
+    - {authorities: 1, threshold: 1}
+    - {authorities: 3, threshold: 2}
+  packet_loss_percent: [0, 5]
+  outage_seconds: [0, 5]
+execution:
+  image: edgechaindb:0.7.0
+  packet_loss_mode: application
+  gateway_start_timeout_seconds: 90
+  run_timeout_seconds: 900
+  reconnect_grace_seconds: 120
+  cleanup_successful_runs: true
+  retain_failed_containers: false
+  collect_success_logs: true
+  max_latency_samples_per_device: 2000
+  worker_generation_batch: 100
