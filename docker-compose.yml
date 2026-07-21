@@ -8,7 +8,7 @@ x-json-logging: &json-logging
       max-file: "5"
 
 x-device-common: &device-common
-  image: edgechaindb:0.8.0
+  image: edgechaindb:0.8.1
   build:
     context: .
     dockerfile: Dockerfile
@@ -50,7 +50,7 @@ x-device-common: &device-common
 
 services:
   gateway:
-    image: edgechaindb:0.8.0
+    image: edgechaindb:0.8.1
     build:
       context: .
       dockerfile: Dockerfile
@@ -257,7 +257,7 @@ services:
       - device-20-data:/data
 
   run:
-    image: edgechaindb:0.8.0
+    image: edgechaindb:0.8.1
     build:
       context: .
       dockerfile: Dockerfile
@@ -328,7 +328,7 @@ services:
       start_period: 5s
 
   test:
-    image: edgechaindb:0.8.0
+    image: edgechaindb:0.8.1
     build:
       context: .
       dockerfile: Dockerfile
@@ -355,7 +355,7 @@ services:
       - edgechain-net
 
   experiment: &experiment-service
-    image: edgechaindb:0.8.0
+    image: edgechaindb:0.8.1
     build:
       context: .
       dockerfile: Dockerfile

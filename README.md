@@ -389,7 +389,7 @@ command: ["python", "-m", "edgechaindb.gateway_server", ...]
 ```
 
 The gateway, devices, run coordinator, and test runner all use importable Python
-modules. The Compose image is explicitly tagged `edgechaindb:0.8.0`, and the
+modules. The Compose image is explicitly tagged `edgechaindb:0.8.1`, and the
 Docker build executes module smoke checks. Therefore a normal first run builds
 the new image instead of silently reusing the older broken command.
 
@@ -524,3 +524,7 @@ docker compose up --build -d experiment
 ```
 
 The commonly typed service alias `experment` is also accepted. Do not start both aliases together; a campaign lock prevents concurrent writes. Follow progress with `docker compose logs -f experiment`. Comprehensive artifacts are continuously written to `result/experiments/`, including `report.html`, `summary.json`, `results.csv`, factor-level JSON/CSV files, raw run evidence, and `progress.json`. Re-running the command resumes passed runs and retries failed runs.
+
+## Version 0.8.1 campaign-start hotfix
+
+Version 0.8.1 fixes a first-run failure in the dynamic experiment controller. `ExperimentCase.to_dict()` already contains `run_id`; version 0.8.0 passed the same field both explicitly and through `**case.to_dict()`, causing Python to abort before Docker provisioning. The structured provisioning log now receives one canonical case payload, and a regression test verifies that the first case reaches Docker provisioning and writes its result artifact. All Compose and matrix image references use `edgechaindb:0.8.1` so dynamic gateway/device containers cannot reuse the affected 0.8.0 image.
