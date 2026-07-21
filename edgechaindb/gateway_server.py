@@ -4,6 +4,7 @@ import argparse
 import asyncio
 from contextlib import nullcontext
 import os
+from pathlib import Path
 import signal
 from typing import Any
 
@@ -126,7 +127,11 @@ def main() -> None:
     parser.add_argument("--quorum", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--authorities", type=int, default=int(os.getenv("EDGECHAIN_AUTHORITIES", "1")))
-    parser.add_argument("--authority-key-dir", default=os.getenv("EDGECHAIN_AUTHORITY_KEY_DIR", "/data/authorities"))
+    parser.add_argument(
+        "--authority-key-dir",
+        default=os.getenv("EDGECHAIN_AUTHORITY_KEY_DIR"),
+        help="authority key directory; defaults beside --node-key",
+    )
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--api-port", type=int, default=8000)
     parser.add_argument("--monitor-port", type=int, default=3030)
@@ -138,6 +143,8 @@ def main() -> None:
     if args.api_port == args.monitor_port:
         parser.error("--api-port and --monitor-port must be different")
 
+    authority_key_dir = args.authority_key_dir or str(Path(args.node_key).resolve().parent / "authorities")
+
     asyncio.run(
         serve_dual_port(
             database_path=args.database,
@@ -146,7 +153,7 @@ def main() -> None:
             quorum_threshold=args.quorum,
             batch_size=args.batch_size,
             authority_count=args.authorities,
-            authority_key_dir=args.authority_key_dir,
+            authority_key_dir=authority_key_dir,
             host=args.host,
             api_port=args.api_port,
             monitor_port=args.monitor_port,

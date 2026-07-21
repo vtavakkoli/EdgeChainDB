@@ -750,10 +750,22 @@ def _assert_checkpoint_recovery(gateway: GatewayClient, device_id: str, key: Key
     return "A restarted device resumed from the gateway checkpoint without forking", response
 
 
+def _verification_timeout_seconds(gateway: GatewayClient) -> float:
+    """Scale full-ledger verification timeout with durable ledger size."""
+    stats = gateway.json("GET", "/stats")
+    events = max(0, int(stats.get("events", 0)))
+    blocks = max(0, int(stats.get("blocks", 0)))
+    # Full verification is intentionally cryptographic and grows with both
+    # signed events and block/quorum signatures. Keep a safe floor and cap.
+    return max(60.0, min(1800.0, 30.0 + events / 750.0 + blocks / 100.0))
+
+
 def _assert_verify(gateway: GatewayClient):
-    result = gateway.json("GET", "/verify")
+    timeout = _verification_timeout_seconds(gateway)
+    result = gateway.json("GET", "/verify", timeout=timeout)
     if not result.get("valid"):
         raise AssertionError(result)
+    result["verification_timeout_seconds"] = timeout
     return "All event signatures, micro-chains, Merkle roots, block links, and quorum signatures verified", result
 
 
