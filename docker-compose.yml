@@ -1,279 +1,749 @@
 name: edgechaindb
-
-x-json-logging: &json-logging
-  logging:
+x-json-logging:
+  logging: &id001
     driver: local
     options:
-      max-size: "10m"
-      max-file: "5"
-
-x-device-common: &device-common
-  image: edgechaindb:0.8.2
-  build:
+      max-size: 10m
+      max-file: '5'
+x-device-common:
+  logging: *id001
+  image: edgechaindb:0.8.3
+  build: &id002
     context: .
     dockerfile: Dockerfile
-  command: ["python", "-m", "edgechaindb.device_node", "--continuous"]
+  command: &id003
+  - python
+  - -m
+  - edgechaindb.device_node
+  - --continuous
   restart: unless-stopped
-  <<: *json-logging
   read_only: true
-  tmpfs:
-    - /tmp
-  cap_drop:
-    - ALL
-  security_opt:
-    - no-new-privileges:true
+  tmpfs: &id004
+  - /tmp
+  cap_drop: &id005
+  - ALL
+  security_opt: &id006
+  - no-new-privileges:true
   mem_limit: 128m
   cpus: 0.25
   stop_grace_period: 10s
-  depends_on:
+  depends_on: &id007
     gateway:
       condition: service_healthy
-  networks:
-    - edgechain-net
-  healthcheck:
-    test: ["CMD", "python", "-c", "import json,pathlib; p=pathlib.Path('/data/state.json'); d=json.loads(p.read_text()) if p.exists() else {}; raise SystemExit(0 if int(d.get('sequence',0)) > 0 else 1)"]
+  networks: &id008
+  - edgechain-net
+  healthcheck: &id009
+    test:
+    - CMD
+    - python
+    - -c
+    - import json,pathlib; p=pathlib.Path('/data/state.json'); d=json.loads(p.read_text())
+      if p.exists() else {}; raise SystemExit(0 if int(d.get('sequence',0)) > 0 else
+      1)
     interval: 5s
     timeout: 3s
     retries: 24
     start_period: 10s
-  environment: &device-environment
+  environment:
     GATEWAY_URL: http://gateway:8000
     DEVICE_STATE_DIR: /data
-    DEVICE_EVENTS: "8"
-    DEVICE_INTERVAL_MS: "1000"
-    DEVICE_STARTUP_JITTER_MS: "1500"
-    DEVICE_MAX_RETRIES: "40"
-    DEVICE_REQUEST_TIMEOUT: "10"
-    DEVICE_CONTINUOUS: "1"
-    DEVICE_MAX_BUFFERED_EVENTS: "10000"
+    DEVICE_EVENTS: '8'
+    DEVICE_INTERVAL_MS: '1000'
+    DEVICE_STARTUP_JITTER_MS: '1500'
+    DEVICE_MAX_RETRIES: '40'
+    DEVICE_REQUEST_TIMEOUT: '10'
+    DEVICE_CONTINUOUS: '1'
+    DEVICE_MAX_BUFFERED_EVENTS: '10000'
     EDGECHAIN_LOG_LEVEL: INFO
-
 services:
   gateway:
-    image: edgechaindb:0.8.2
+    logging: *id001
+    image: edgechaindb:0.8.3
     build:
       context: .
       dockerfile: Dockerfile
-    command: ["python", "-m", "edgechaindb.gateway_server", "--database", "/data/edgechain.db", "--node-key", "/data/gateway.key", "--node-id", "gateway-01", "--quorum", "1", "--batch-size", "25", "--host", "0.0.0.0", "--api-port", "8000", "--monitor-port", "3030"]
-    user: "0:0"
+    command:
+    - python
+    - -m
+    - edgechaindb.gateway_server
+    - --database
+    - /data/edgechain.db
+    - --node-key
+    - /data/gateway.key
+    - --node-id
+    - gateway-01
+    - --quorum
+    - '1'
+    - --batch-size
+    - '25'
+    - --host
+    - 0.0.0.0
+    - --api-port
+    - '8000'
+    - --monitor-port
+    - '3030'
+    user: 0:0
     restart: unless-stopped
-    <<: *json-logging
     read_only: true
     tmpfs:
-      - /tmp
+    - /tmp
     cap_drop:
-      - ALL
-    # The image initializes /data as UID 1000, while the gateway runs as root
-    # so it can access the local Docker socket used by the development dashboard.
-    # After dropping all capabilities, root cannot write to an existing UID-1000
-    # named volume unless DAC_OVERRIDE is restored. Keep the capability narrowly
-    # scoped to this local gateway service.
+    - ALL
     cap_add:
-      - DAC_OVERRIDE
+    - DAC_OVERRIDE
     security_opt:
-      - no-new-privileges:true
+    - no-new-privileges:true
     mem_limit: 512m
     cpus: 1.0
     ports:
-      - "127.0.0.1:8000:8000"
-      # A real second listener runs inside the gateway container.
-      - "127.0.0.1:3030:3030"
+    - 127.0.0.1:8000:8000
+    - 127.0.0.1:3030:3030
     environment:
-      EDGECHAIN_COMPOSE_PROJECT: "${COMPOSE_PROJECT_NAME:-edgechaindb}"
+      EDGECHAIN_COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME:-edgechaindb}
       EDGECHAIN_RESULT_DIR: /results
       EDGECHAIN_LOG_LEVEL: INFO
-      EDGECHAIN_MONITOR_PORT: "3030"
+      EDGECHAIN_MONITOR_PORT: '3030'
     volumes:
-      - gateway-data:/data
-      - ./result:/results:ro
-      - /var/run/docker.sock:/var/run/docker.sock
+    - gateway-data:/data
+    - ./result:/results:ro
+    - /var/run/docker.sock:/var/run/docker.sock
     networks:
-      - edgechain-net
+    - edgechain-net
     healthcheck:
-      test: ["CMD", "python", "-c", "import json,urllib.request; a=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=3)); m=json.load(urllib.request.urlopen('http://127.0.0.1:3030/monitor/health',timeout=3)); h=urllib.request.urlopen('http://127.0.0.1:3030/',timeout=3).read(); raise SystemExit(0 if a.get('status')=='ok' and m.get('dashboard')=='ready' and b'EdgeChainDB Cluster Monitor' in h else 1)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import json,urllib.request; a=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=3));
+        m=json.load(urllib.request.urlopen('http://127.0.0.1:3030/monitor/health',timeout=3));
+        h=urllib.request.urlopen('http://127.0.0.1:3030/',timeout=3).read(); raise
+        SystemExit(0 if a.get('status')=='ok' and m.get('dashboard')=='ready' and
+        b'EdgeChainDB Cluster Monitor' in h else 1)
       interval: 3s
       timeout: 3s
       retries: 30
       start_period: 5s
-
   device-01:
-    <<: *device-common
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: *id002
+    command: *id003
+    restart: unless-stopped
+    read_only: true
+    tmpfs: *id004
+    cap_drop: *id005
+    security_opt: *id006
+    mem_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 10s
+    depends_on: *id007
+    networks: *id008
+    healthcheck: *id009
     environment:
-      <<: *device-environment
+      GATEWAY_URL: http://gateway:8000
+      DEVICE_STATE_DIR: /data
+      DEVICE_EVENTS: '8'
+      DEVICE_INTERVAL_MS: '1000'
+      DEVICE_STARTUP_JITTER_MS: '1500'
+      DEVICE_MAX_RETRIES: '40'
+      DEVICE_REQUEST_TIMEOUT: '10'
+      DEVICE_CONTINUOUS: '1'
+      DEVICE_MAX_BUFFERED_EVENTS: '10000'
+      EDGECHAIN_LOG_LEVEL: INFO
       DEVICE_ID: iot-device-01
     volumes:
-      - device-01-data:/data
-
+    - device-01-data:/data
   device-02:
-    <<: *device-common
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: *id002
+    command: *id003
+    restart: unless-stopped
+    read_only: true
+    tmpfs: *id004
+    cap_drop: *id005
+    security_opt: *id006
+    mem_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 10s
+    depends_on: *id007
+    networks: *id008
+    healthcheck: *id009
     environment:
-      <<: *device-environment
+      GATEWAY_URL: http://gateway:8000
+      DEVICE_STATE_DIR: /data
+      DEVICE_EVENTS: '8'
+      DEVICE_INTERVAL_MS: '1000'
+      DEVICE_STARTUP_JITTER_MS: '1500'
+      DEVICE_MAX_RETRIES: '40'
+      DEVICE_REQUEST_TIMEOUT: '10'
+      DEVICE_CONTINUOUS: '1'
+      DEVICE_MAX_BUFFERED_EVENTS: '10000'
+      EDGECHAIN_LOG_LEVEL: INFO
       DEVICE_ID: iot-device-02
     volumes:
-      - device-02-data:/data
-
+    - device-02-data:/data
   device-03:
-    <<: *device-common
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: *id002
+    command: *id003
+    restart: unless-stopped
+    read_only: true
+    tmpfs: *id004
+    cap_drop: *id005
+    security_opt: *id006
+    mem_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 10s
+    depends_on: *id007
+    networks: *id008
+    healthcheck: *id009
     environment:
-      <<: *device-environment
+      GATEWAY_URL: http://gateway:8000
+      DEVICE_STATE_DIR: /data
+      DEVICE_EVENTS: '8'
+      DEVICE_INTERVAL_MS: '1000'
+      DEVICE_STARTUP_JITTER_MS: '1500'
+      DEVICE_MAX_RETRIES: '40'
+      DEVICE_REQUEST_TIMEOUT: '10'
+      DEVICE_CONTINUOUS: '1'
+      DEVICE_MAX_BUFFERED_EVENTS: '10000'
+      EDGECHAIN_LOG_LEVEL: INFO
       DEVICE_ID: iot-device-03
     volumes:
-      - device-03-data:/data
-
+    - device-03-data:/data
   device-04:
-    <<: *device-common
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: *id002
+    command: *id003
+    restart: unless-stopped
+    read_only: true
+    tmpfs: *id004
+    cap_drop: *id005
+    security_opt: *id006
+    mem_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 10s
+    depends_on: *id007
+    networks: *id008
+    healthcheck: *id009
     environment:
-      <<: *device-environment
+      GATEWAY_URL: http://gateway:8000
+      DEVICE_STATE_DIR: /data
+      DEVICE_EVENTS: '8'
+      DEVICE_INTERVAL_MS: '1000'
+      DEVICE_STARTUP_JITTER_MS: '1500'
+      DEVICE_MAX_RETRIES: '40'
+      DEVICE_REQUEST_TIMEOUT: '10'
+      DEVICE_CONTINUOUS: '1'
+      DEVICE_MAX_BUFFERED_EVENTS: '10000'
+      EDGECHAIN_LOG_LEVEL: INFO
       DEVICE_ID: iot-device-04
     volumes:
-      - device-04-data:/data
-
+    - device-04-data:/data
   device-05:
-    <<: *device-common
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: *id002
+    command: *id003
+    restart: unless-stopped
+    read_only: true
+    tmpfs: *id004
+    cap_drop: *id005
+    security_opt: *id006
+    mem_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 10s
+    depends_on: *id007
+    networks: *id008
+    healthcheck: *id009
     environment:
-      <<: *device-environment
+      GATEWAY_URL: http://gateway:8000
+      DEVICE_STATE_DIR: /data
+      DEVICE_EVENTS: '8'
+      DEVICE_INTERVAL_MS: '1000'
+      DEVICE_STARTUP_JITTER_MS: '1500'
+      DEVICE_MAX_RETRIES: '40'
+      DEVICE_REQUEST_TIMEOUT: '10'
+      DEVICE_CONTINUOUS: '1'
+      DEVICE_MAX_BUFFERED_EVENTS: '10000'
+      EDGECHAIN_LOG_LEVEL: INFO
       DEVICE_ID: iot-device-05
     volumes:
-      - device-05-data:/data
-
+    - device-05-data:/data
   device-06:
-    <<: *device-common
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: *id002
+    command: *id003
+    restart: unless-stopped
+    read_only: true
+    tmpfs: *id004
+    cap_drop: *id005
+    security_opt: *id006
+    mem_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 10s
+    depends_on: *id007
+    networks: *id008
+    healthcheck: *id009
     environment:
-      <<: *device-environment
+      GATEWAY_URL: http://gateway:8000
+      DEVICE_STATE_DIR: /data
+      DEVICE_EVENTS: '8'
+      DEVICE_INTERVAL_MS: '1000'
+      DEVICE_STARTUP_JITTER_MS: '1500'
+      DEVICE_MAX_RETRIES: '40'
+      DEVICE_REQUEST_TIMEOUT: '10'
+      DEVICE_CONTINUOUS: '1'
+      DEVICE_MAX_BUFFERED_EVENTS: '10000'
+      EDGECHAIN_LOG_LEVEL: INFO
       DEVICE_ID: iot-device-06
     volumes:
-      - device-06-data:/data
-
+    - device-06-data:/data
   device-07:
-    <<: *device-common
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: *id002
+    command: *id003
+    restart: unless-stopped
+    read_only: true
+    tmpfs: *id004
+    cap_drop: *id005
+    security_opt: *id006
+    mem_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 10s
+    depends_on: *id007
+    networks: *id008
+    healthcheck: *id009
     environment:
-      <<: *device-environment
+      GATEWAY_URL: http://gateway:8000
+      DEVICE_STATE_DIR: /data
+      DEVICE_EVENTS: '8'
+      DEVICE_INTERVAL_MS: '1000'
+      DEVICE_STARTUP_JITTER_MS: '1500'
+      DEVICE_MAX_RETRIES: '40'
+      DEVICE_REQUEST_TIMEOUT: '10'
+      DEVICE_CONTINUOUS: '1'
+      DEVICE_MAX_BUFFERED_EVENTS: '10000'
+      EDGECHAIN_LOG_LEVEL: INFO
       DEVICE_ID: iot-device-07
     volumes:
-      - device-07-data:/data
-
+    - device-07-data:/data
   device-08:
-    <<: *device-common
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: *id002
+    command: *id003
+    restart: unless-stopped
+    read_only: true
+    tmpfs: *id004
+    cap_drop: *id005
+    security_opt: *id006
+    mem_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 10s
+    depends_on: *id007
+    networks: *id008
+    healthcheck: *id009
     environment:
-      <<: *device-environment
+      GATEWAY_URL: http://gateway:8000
+      DEVICE_STATE_DIR: /data
+      DEVICE_EVENTS: '8'
+      DEVICE_INTERVAL_MS: '1000'
+      DEVICE_STARTUP_JITTER_MS: '1500'
+      DEVICE_MAX_RETRIES: '40'
+      DEVICE_REQUEST_TIMEOUT: '10'
+      DEVICE_CONTINUOUS: '1'
+      DEVICE_MAX_BUFFERED_EVENTS: '10000'
+      EDGECHAIN_LOG_LEVEL: INFO
       DEVICE_ID: iot-device-08
     volumes:
-      - device-08-data:/data
-
+    - device-08-data:/data
   device-09:
-    <<: *device-common
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: *id002
+    command: *id003
+    restart: unless-stopped
+    read_only: true
+    tmpfs: *id004
+    cap_drop: *id005
+    security_opt: *id006
+    mem_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 10s
+    depends_on: *id007
+    networks: *id008
+    healthcheck: *id009
     environment:
-      <<: *device-environment
+      GATEWAY_URL: http://gateway:8000
+      DEVICE_STATE_DIR: /data
+      DEVICE_EVENTS: '8'
+      DEVICE_INTERVAL_MS: '1000'
+      DEVICE_STARTUP_JITTER_MS: '1500'
+      DEVICE_MAX_RETRIES: '40'
+      DEVICE_REQUEST_TIMEOUT: '10'
+      DEVICE_CONTINUOUS: '1'
+      DEVICE_MAX_BUFFERED_EVENTS: '10000'
+      EDGECHAIN_LOG_LEVEL: INFO
       DEVICE_ID: iot-device-09
     volumes:
-      - device-09-data:/data
-
+    - device-09-data:/data
   device-10:
-    <<: *device-common
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: *id002
+    command: *id003
+    restart: unless-stopped
+    read_only: true
+    tmpfs: *id004
+    cap_drop: *id005
+    security_opt: *id006
+    mem_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 10s
+    depends_on: *id007
+    networks: *id008
+    healthcheck: *id009
     environment:
-      <<: *device-environment
+      GATEWAY_URL: http://gateway:8000
+      DEVICE_STATE_DIR: /data
+      DEVICE_EVENTS: '8'
+      DEVICE_INTERVAL_MS: '1000'
+      DEVICE_STARTUP_JITTER_MS: '1500'
+      DEVICE_MAX_RETRIES: '40'
+      DEVICE_REQUEST_TIMEOUT: '10'
+      DEVICE_CONTINUOUS: '1'
+      DEVICE_MAX_BUFFERED_EVENTS: '10000'
+      EDGECHAIN_LOG_LEVEL: INFO
       DEVICE_ID: iot-device-10
     volumes:
-      - device-10-data:/data
-
+    - device-10-data:/data
   device-11:
-    <<: *device-common
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: *id002
+    command: *id003
+    restart: unless-stopped
+    read_only: true
+    tmpfs: *id004
+    cap_drop: *id005
+    security_opt: *id006
+    mem_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 10s
+    depends_on: *id007
+    networks: *id008
+    healthcheck: *id009
     environment:
-      <<: *device-environment
+      GATEWAY_URL: http://gateway:8000
+      DEVICE_STATE_DIR: /data
+      DEVICE_EVENTS: '8'
+      DEVICE_INTERVAL_MS: '1000'
+      DEVICE_STARTUP_JITTER_MS: '1500'
+      DEVICE_MAX_RETRIES: '40'
+      DEVICE_REQUEST_TIMEOUT: '10'
+      DEVICE_CONTINUOUS: '1'
+      DEVICE_MAX_BUFFERED_EVENTS: '10000'
+      EDGECHAIN_LOG_LEVEL: INFO
       DEVICE_ID: iot-device-11
     volumes:
-      - device-11-data:/data
-
+    - device-11-data:/data
   device-12:
-    <<: *device-common
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: *id002
+    command: *id003
+    restart: unless-stopped
+    read_only: true
+    tmpfs: *id004
+    cap_drop: *id005
+    security_opt: *id006
+    mem_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 10s
+    depends_on: *id007
+    networks: *id008
+    healthcheck: *id009
     environment:
-      <<: *device-environment
+      GATEWAY_URL: http://gateway:8000
+      DEVICE_STATE_DIR: /data
+      DEVICE_EVENTS: '8'
+      DEVICE_INTERVAL_MS: '1000'
+      DEVICE_STARTUP_JITTER_MS: '1500'
+      DEVICE_MAX_RETRIES: '40'
+      DEVICE_REQUEST_TIMEOUT: '10'
+      DEVICE_CONTINUOUS: '1'
+      DEVICE_MAX_BUFFERED_EVENTS: '10000'
+      EDGECHAIN_LOG_LEVEL: INFO
       DEVICE_ID: iot-device-12
     volumes:
-      - device-12-data:/data
-
+    - device-12-data:/data
   device-13:
-    <<: *device-common
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: *id002
+    command: *id003
+    restart: unless-stopped
+    read_only: true
+    tmpfs: *id004
+    cap_drop: *id005
+    security_opt: *id006
+    mem_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 10s
+    depends_on: *id007
+    networks: *id008
+    healthcheck: *id009
     environment:
-      <<: *device-environment
+      GATEWAY_URL: http://gateway:8000
+      DEVICE_STATE_DIR: /data
+      DEVICE_EVENTS: '8'
+      DEVICE_INTERVAL_MS: '1000'
+      DEVICE_STARTUP_JITTER_MS: '1500'
+      DEVICE_MAX_RETRIES: '40'
+      DEVICE_REQUEST_TIMEOUT: '10'
+      DEVICE_CONTINUOUS: '1'
+      DEVICE_MAX_BUFFERED_EVENTS: '10000'
+      EDGECHAIN_LOG_LEVEL: INFO
       DEVICE_ID: iot-device-13
     volumes:
-      - device-13-data:/data
-
+    - device-13-data:/data
   device-14:
-    <<: *device-common
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: *id002
+    command: *id003
+    restart: unless-stopped
+    read_only: true
+    tmpfs: *id004
+    cap_drop: *id005
+    security_opt: *id006
+    mem_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 10s
+    depends_on: *id007
+    networks: *id008
+    healthcheck: *id009
     environment:
-      <<: *device-environment
+      GATEWAY_URL: http://gateway:8000
+      DEVICE_STATE_DIR: /data
+      DEVICE_EVENTS: '8'
+      DEVICE_INTERVAL_MS: '1000'
+      DEVICE_STARTUP_JITTER_MS: '1500'
+      DEVICE_MAX_RETRIES: '40'
+      DEVICE_REQUEST_TIMEOUT: '10'
+      DEVICE_CONTINUOUS: '1'
+      DEVICE_MAX_BUFFERED_EVENTS: '10000'
+      EDGECHAIN_LOG_LEVEL: INFO
       DEVICE_ID: iot-device-14
     volumes:
-      - device-14-data:/data
-
+    - device-14-data:/data
   device-15:
-    <<: *device-common
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: *id002
+    command: *id003
+    restart: unless-stopped
+    read_only: true
+    tmpfs: *id004
+    cap_drop: *id005
+    security_opt: *id006
+    mem_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 10s
+    depends_on: *id007
+    networks: *id008
+    healthcheck: *id009
     environment:
-      <<: *device-environment
+      GATEWAY_URL: http://gateway:8000
+      DEVICE_STATE_DIR: /data
+      DEVICE_EVENTS: '8'
+      DEVICE_INTERVAL_MS: '1000'
+      DEVICE_STARTUP_JITTER_MS: '1500'
+      DEVICE_MAX_RETRIES: '40'
+      DEVICE_REQUEST_TIMEOUT: '10'
+      DEVICE_CONTINUOUS: '1'
+      DEVICE_MAX_BUFFERED_EVENTS: '10000'
+      EDGECHAIN_LOG_LEVEL: INFO
       DEVICE_ID: iot-device-15
     volumes:
-      - device-15-data:/data
-
+    - device-15-data:/data
   device-16:
-    <<: *device-common
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: *id002
+    command: *id003
+    restart: unless-stopped
+    read_only: true
+    tmpfs: *id004
+    cap_drop: *id005
+    security_opt: *id006
+    mem_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 10s
+    depends_on: *id007
+    networks: *id008
+    healthcheck: *id009
     environment:
-      <<: *device-environment
+      GATEWAY_URL: http://gateway:8000
+      DEVICE_STATE_DIR: /data
+      DEVICE_EVENTS: '8'
+      DEVICE_INTERVAL_MS: '1000'
+      DEVICE_STARTUP_JITTER_MS: '1500'
+      DEVICE_MAX_RETRIES: '40'
+      DEVICE_REQUEST_TIMEOUT: '10'
+      DEVICE_CONTINUOUS: '1'
+      DEVICE_MAX_BUFFERED_EVENTS: '10000'
+      EDGECHAIN_LOG_LEVEL: INFO
       DEVICE_ID: iot-device-16
     volumes:
-      - device-16-data:/data
-
+    - device-16-data:/data
   device-17:
-    <<: *device-common
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: *id002
+    command: *id003
+    restart: unless-stopped
+    read_only: true
+    tmpfs: *id004
+    cap_drop: *id005
+    security_opt: *id006
+    mem_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 10s
+    depends_on: *id007
+    networks: *id008
+    healthcheck: *id009
     environment:
-      <<: *device-environment
+      GATEWAY_URL: http://gateway:8000
+      DEVICE_STATE_DIR: /data
+      DEVICE_EVENTS: '8'
+      DEVICE_INTERVAL_MS: '1000'
+      DEVICE_STARTUP_JITTER_MS: '1500'
+      DEVICE_MAX_RETRIES: '40'
+      DEVICE_REQUEST_TIMEOUT: '10'
+      DEVICE_CONTINUOUS: '1'
+      DEVICE_MAX_BUFFERED_EVENTS: '10000'
+      EDGECHAIN_LOG_LEVEL: INFO
       DEVICE_ID: iot-device-17
     volumes:
-      - device-17-data:/data
-
+    - device-17-data:/data
   device-18:
-    <<: *device-common
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: *id002
+    command: *id003
+    restart: unless-stopped
+    read_only: true
+    tmpfs: *id004
+    cap_drop: *id005
+    security_opt: *id006
+    mem_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 10s
+    depends_on: *id007
+    networks: *id008
+    healthcheck: *id009
     environment:
-      <<: *device-environment
+      GATEWAY_URL: http://gateway:8000
+      DEVICE_STATE_DIR: /data
+      DEVICE_EVENTS: '8'
+      DEVICE_INTERVAL_MS: '1000'
+      DEVICE_STARTUP_JITTER_MS: '1500'
+      DEVICE_MAX_RETRIES: '40'
+      DEVICE_REQUEST_TIMEOUT: '10'
+      DEVICE_CONTINUOUS: '1'
+      DEVICE_MAX_BUFFERED_EVENTS: '10000'
+      EDGECHAIN_LOG_LEVEL: INFO
       DEVICE_ID: iot-device-18
     volumes:
-      - device-18-data:/data
-
+    - device-18-data:/data
   device-19:
-    <<: *device-common
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: *id002
+    command: *id003
+    restart: unless-stopped
+    read_only: true
+    tmpfs: *id004
+    cap_drop: *id005
+    security_opt: *id006
+    mem_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 10s
+    depends_on: *id007
+    networks: *id008
+    healthcheck: *id009
     environment:
-      <<: *device-environment
+      GATEWAY_URL: http://gateway:8000
+      DEVICE_STATE_DIR: /data
+      DEVICE_EVENTS: '8'
+      DEVICE_INTERVAL_MS: '1000'
+      DEVICE_STARTUP_JITTER_MS: '1500'
+      DEVICE_MAX_RETRIES: '40'
+      DEVICE_REQUEST_TIMEOUT: '10'
+      DEVICE_CONTINUOUS: '1'
+      DEVICE_MAX_BUFFERED_EVENTS: '10000'
+      EDGECHAIN_LOG_LEVEL: INFO
       DEVICE_ID: iot-device-19
     volumes:
-      - device-19-data:/data
-
+    - device-19-data:/data
   device-20:
-    <<: *device-common
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: *id002
+    command: *id003
+    restart: unless-stopped
+    read_only: true
+    tmpfs: *id004
+    cap_drop: *id005
+    security_opt: *id006
+    mem_limit: 128m
+    cpus: 0.25
+    stop_grace_period: 10s
+    depends_on: *id007
+    networks: *id008
+    healthcheck: *id009
     environment:
-      <<: *device-environment
+      GATEWAY_URL: http://gateway:8000
+      DEVICE_STATE_DIR: /data
+      DEVICE_EVENTS: '8'
+      DEVICE_INTERVAL_MS: '1000'
+      DEVICE_STARTUP_JITTER_MS: '1500'
+      DEVICE_MAX_RETRIES: '40'
+      DEVICE_REQUEST_TIMEOUT: '10'
+      DEVICE_CONTINUOUS: '1'
+      DEVICE_MAX_BUFFERED_EVENTS: '10000'
+      EDGECHAIN_LOG_LEVEL: INFO
       DEVICE_ID: iot-device-20
     volumes:
-      - device-20-data:/data
-
+    - device-20-data:/data
   run:
-    image: edgechaindb:0.8.2
+    logging: *id001
+    image: edgechaindb:0.8.3
     build:
       context: .
       dockerfile: Dockerfile
-    command: ["python", "-m", "edgechaindb.cluster_runtime"]
+    command:
+    - python
+    - -m
+    - edgechaindb.cluster_runtime
     restart: unless-stopped
-    <<: *json-logging
     read_only: true
     tmpfs:
-      - /tmp
+    - /tmp
     cap_drop:
-      - ALL
+    - ALL
     security_opt:
-      - no-new-privileges:true
+    - no-new-privileges:true
     environment:
       GATEWAY_URL: http://gateway:8000
-      CLUSTER_STATUS_INTERVAL: "15"
+      CLUSTER_STATUS_INTERVAL: '15'
       EDGECHAIN_LOG_LEVEL: INFO
     depends_on:
       gateway:
@@ -319,109 +789,136 @@ services:
       device-20:
         condition: service_healthy
     networks:
-      - edgechain-net
+    - edgechain-net
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://gateway:8000/health', timeout=2).read()"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://gateway:8000/health',
+        timeout=2).read()
       interval: 5s
       timeout: 3s
       retries: 12
       start_period: 5s
-
   test:
-    image: edgechaindb:0.8.2
+    logging: *id001
+    image: edgechaindb:0.8.3
     build:
       context: .
       dockerfile: Dockerfile
-    profiles: ["test"]
-    user: "0:0"
-    command: ["python", "-m", "edgechaindb.benchmark", "--base-url", "http://gateway:8000", "--expected-devices", "20", "--events-per-device", "8", "--result-dir", "/app/result", "--compose-file", "/app/docker-compose.yml", "--project-root", "/app"]
-    restart: "no"
-    <<: *json-logging
+    profiles:
+    - test
+    user: 0:0
+    command:
+    - python
+    - -m
+    - edgechaindb.benchmark
+    - --base-url
+    - http://gateway:8000
+    - --expected-devices
+    - '20'
+    - --events-per-device
+    - '8'
+    - --result-dir
+    - /app/result
+    - --compose-file
+    - /app/docker-compose.yml
+    - --project-root
+    - /app
+    restart: 'no'
     cap_drop:
-      - ALL
+    - ALL
     security_opt:
-      - no-new-privileges:true
+    - no-new-privileges:true
     environment:
-      EDGECHAIN_COMPOSE_PROJECT: "${COMPOSE_PROJECT_NAME:-edgechaindb}"
+      EDGECHAIN_COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME:-edgechaindb}
       EDGECHAIN_LOG_LEVEL: INFO
     depends_on:
       run:
         condition: service_healthy
     volumes:
-      - ./result:/app/result
-      - ./docker-compose.yml:/app/docker-compose.yml:ro
-      - /var/run/docker.sock:/var/run/docker.sock
+    - ./result:/app/result
+    - ./docker-compose.yml:/app/docker-compose.yml:ro
+    - /var/run/docker.sock:/var/run/docker.sock
     networks:
-      - edgechain-net
-
-  experiment: &experiment-service
-    image: edgechaindb:0.8.2
-    build:
+    - edgechain-net
+  experiment:
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: &id010
       context: .
       dockerfile: Dockerfile
-    profiles: ["experiment"]
-    user: "0:0"
-    command:
-      - python
-      - -m
-      - edgechaindb.experiments.runner
-      - --config
-      - /app/experiments/full-matrix.yaml
-      - --result-dir
-      - /result/experiments
-      - --resume
-      - --rerun-failed
-      - --report-every
-      - "10"
-    restart: "no"
-    <<: *json-logging
+    profiles:
+    - experiment
+    user: 0:0
+    command: &id011
+    - python
+    - -m
+    - edgechaindb.experiments.runner
+    - --config
+    - /app/experiments/one-day.yaml
+    - --result-dir
+    - /result/experiments
+    - --resume
+    - --rerun-failed
+    - --report-every
+    - '10'
+    restart: 'no'
     read_only: true
-    tmpfs:
-      - /tmp
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    environment:
+    tmpfs: &id012
+    - /tmp
+    cap_drop: &id013
+    - ALL
+    security_opt: &id014
+    - no-new-privileges:true
+    environment: &id015
       EDGECHAIN_LOG_LEVEL: INFO
-      EDGECHAIN_EXPERIMENT_CONFIG: /app/experiments/full-matrix.yaml
+      EDGECHAIN_EXPERIMENT_CONFIG: /app/experiments/one-day.yaml
       EDGECHAIN_EXPERIMENT_RESULT_DIR: /result/experiments
-    volumes:
-      - ./result/experiments:/result/experiments
-      - ./experiments:/app/experiments:ro
-      - /var/run/docker.sock:/var/run/docker.sock
-
-  # Backward-compatible alias for the common "experment" spelling.
-  # A campaign lock prevents accidental concurrent execution with `experiment`.
+    volumes: &id016
+    - ./result/experiments:/result/experiments
+    - ./experiments:/app/experiments:ro
+    - /var/run/docker.sock:/var/run/docker.sock
   experment:
-    <<: *experiment-service
-    profiles: ["experment"]
-
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build: *id010
+    profiles:
+    - experment
+    user: 0:0
+    command: *id011
+    restart: 'no'
+    read_only: true
+    tmpfs: *id012
+    cap_drop: *id013
+    security_opt: *id014
+    environment: *id015
+    volumes: *id016
 networks:
   edgechain-net:
     name: edgechain-iot-net
     driver: bridge
     internal: true
-
 volumes:
-  gateway-data:
-  device-01-data:
-  device-02-data:
-  device-03-data:
-  device-04-data:
-  device-05-data:
-  device-06-data:
-  device-07-data:
-  device-08-data:
-  device-09-data:
-  device-10-data:
-  device-11-data:
-  device-12-data:
-  device-13-data:
-  device-14-data:
-  device-15-data:
-  device-16-data:
-  device-17-data:
-  device-18-data:
-  device-19-data:
-  device-20-data:
+  gateway-data: null
+  device-01-data: null
+  device-02-data: null
+  device-03-data: null
+  device-04-data: null
+  device-05-data: null
+  device-06-data: null
+  device-07-data: null
+  device-08-data: null
+  device-09-data: null
+  device-10-data: null
+  device-11-data: null
+  device-12-data: null
+  device-13-data: null
+  device-14-data: null
+  device-15-data: null
+  device-16-data: null
+  device-17-data: null
+  device-18-data: null
+  device-19-data: null
+  device-20-data: null

@@ -389,7 +389,7 @@ command: ["python", "-m", "edgechaindb.gateway_server", ...]
 ```
 
 The gateway, devices, run coordinator, and test runner all use importable Python
-modules. The Compose image is explicitly tagged `edgechaindb:0.8.2`, and the
+modules. The Compose image is explicitly tagged `edgechaindb:0.8.3`, and the
 Docker build executes module smoke checks. Therefore a normal first run builds
 the new image instead of silently reusing the older broken command.
 
@@ -527,7 +527,7 @@ The commonly typed service alias `experment` is also accepted. Do not start both
 
 ## Version 0.8.2 campaign-start hotfix
 
-Version 0.8.2 fixes a first-run failure in the dynamic experiment controller. `ExperimentCase.to_dict()` already contains `run_id`; version 0.8.0 passed the same field both explicitly and through `**case.to_dict()`, causing Python to abort before Docker provisioning. The structured provisioning log now receives one canonical case payload, and a regression test verifies that the first case reaches Docker provisioning and writes its result artifact. All Compose and matrix image references use `edgechaindb:0.8.2` so dynamic gateway/device containers cannot reuse the affected 0.8.0 image.
+Version 0.8.2 fixes a first-run failure in the dynamic experiment controller. `ExperimentCase.to_dict()` already contains `run_id`; version 0.8.0 passed the same field both explicitly and through `**case.to_dict()`, causing Python to abort before Docker provisioning. The structured provisioning log now receives one canonical case payload, and a regression test verifies that the first case reaches Docker provisioning and writes its result artifact. All Compose and matrix image references use `edgechaindb:0.8.3` so dynamic gateway/device containers cannot reuse the affected 0.8.0 image.
 
 
 ## Version 0.8.2 experimental outage hotfix
@@ -535,3 +535,38 @@ Version 0.8.2 fixes a first-run failure in the dynamic experiment controller. `E
 Dynamic matrix gateways no longer attempt to initialize the Compose Docker-control adapter. The experiment runner owns Docker lifecycle and the child gateways intentionally do not receive the Docker socket, so `EDGECHAIN_CLUSTER_CONTROL_ENABLED=0` is injected into every dynamic gateway. This removes the misleading `docker_control_connection_failed` error while preserving ledger, API, and database observability. Gateway exit code 0 during a configured outage is expected: the runner deliberately stops and restarts that container. Resource sampling now survives this temporary stop. Use `docker compose up --build -d experiment` or `scripts/run_experiment.ps1`; running without `-d` attaches the terminal, and pressing Ctrl+C stops the campaign.
 
 Interrupted experiment attempts can leave labelled dynamic resources outside Compose ownership. Version 0.8.2 removes stale containers, networks, and volumes for the same deterministic run ID before retrying, so `--resume --rerun-failed` does not fail on Docker name conflicts.
+
+## Version 0.8.3: one-day balanced experiment profile
+
+The default `experiment` and `experment` Compose services now use
+`experiments/one-day.yaml`. The event levels are reduced to **10, 100, 1,000,
+and 10,000**. A full cross of every factor would still require 24,000 runs and
+more than 31 days of deliberate outage waiting, so the default campaign uses a
+deterministic balanced screening design instead:
+
+- 60 unique configurations per repetition;
+- 3 repetitions, for 180 Docker runs;
+- 499,950 nominal events;
+- 5.58 hours of deliberate gateway outage time;
+- exact marginal coverage of every device, event, block-size, quorum, packet-
+  loss, and outage level;
+- heuristic pairwise balancing with a fixed seed for reproducibility.
+
+Start it with:
+
+```bash
+docker compose up --build -d experiment
+docker compose logs -f experiment
+```
+
+The continuously refreshed report is written to
+`result/experiments/report.html`. Existing journal rows from a different plan
+are retained in `journal.jsonl` but excluded from current coverage statistics
+and exported to `ignored-results-from-other-plans.json`.
+
+For five repetitions, run `experiments/one-day-5-repetitions.yaml`. The reduced-
+event complete factorial remains in `experiments/full-matrix.yaml`, while the
+original 1K/10K/100K/1M-event stress campaign is preserved as
+`experiments/large-scale-matrix.yaml`. Neither full factorial is expected to
+finish in one day on a single Docker Desktop host because every combination
+also includes real 5-second, 30-second, and 5-minute outages.

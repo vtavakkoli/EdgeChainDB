@@ -19,6 +19,7 @@ RUN pip install --upgrade pip && pip install ".[dev]" && \
     python -m edgechaindb.experiments.worker --help >/dev/null && \
     python -m edgechaindb.experiments.merge --help >/dev/null && \
     python -m edgechaindb.experiments.runner --config /app/experiments/smoke.yaml --result-dir /tmp/experiment-plan --dry-run >/dev/null && \
+    python -m edgechaindb.experiments.runner --config /app/experiments/one-day.yaml --result-dir /tmp/one-day-plan --dry-run >/dev/null && \
     groupadd --gid 1000 edgechain && \
     useradd --uid 1000 --gid edgechain --create-home --shell /usr/sbin/nologin edgechain && \
     mkdir -p /data /app/result && chown -R edgechain:edgechain /data /app/result
