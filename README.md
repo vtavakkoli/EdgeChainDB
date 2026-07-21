@@ -389,7 +389,7 @@ command: ["python", "-m", "edgechaindb.gateway_server", ...]
 ```
 
 The gateway, devices, run coordinator, and test runner all use importable Python
-modules. The Compose image is explicitly tagged `edgechaindb:0.6.0`, and the
+modules. The Compose image is explicitly tagged `edgechaindb:0.8.0`, and the
 Docker build executes module smoke checks. Therefore a normal first run builds
 the new image instead of silently reusing the older broken command.
 
@@ -449,8 +449,7 @@ Full ledger verification validates every signature, device micro-chain, Merkle
 root, block link, and quorum signature. On a ledger with roughly 9,600 events,
 that verification took about 13 seconds. The previous recovery checker used a
 fixed five-second HTTP read timeout and therefore reported a false `ReadTimeout`
-after a successful gateway restart. Version 0.6 waits for gateway health first
-and then assigns a size-aware verification timeout of 60 to 300 seconds.
+after a successful gateway restart. Version 0.8 waits for gateway health first and assigns a ledger-size-aware verification timeout of 60 to 1,800 seconds.
 
 ### Why the previous PowerShell script failed
 
@@ -485,7 +484,7 @@ Generate the complete plan without starting workload containers:
 docker compose --profile experiment run --rm experiment \
   python -m edgechaindb.experiments.runner \
   --config /app/experiments/full-matrix.yaml \
-  --result-dir /app/result/experiments --dry-run
+  --result-dir /result/experiments --dry-run
 ```
 
 Run a smoke campaign:
@@ -515,3 +514,13 @@ Merge independently generated shard reports:
 The dashboard exposes the resulting report at `http://127.0.0.1:3030/experiments/report` and the plan at `/experiments/plan`.
 
 See `docs/EXPERIMENTAL_PROTOCOL.md`, `docs/SCALING_AND_SHARDING.md`, and `docs/REPORTING_SCHEMA.md` for the complete methodology and artifact definitions.
+
+## One-command complete experimental campaign
+
+Run the complete five-repetition matrix as a detached, resumable Docker service:
+
+```bash
+docker compose up --build -d experiment
+```
+
+The commonly typed service alias `experment` is also accepted. Do not start both aliases together; a campaign lock prevents concurrent writes. Follow progress with `docker compose logs -f experiment`. Comprehensive artifacts are continuously written to `result/experiments/`, including `report.html`, `summary.json`, `results.csv`, factor-level JSON/CSV files, raw run evidence, and `progress.json`. Re-running the command resumes passed runs and retries failed runs.

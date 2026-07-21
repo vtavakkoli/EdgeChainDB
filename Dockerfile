@@ -10,6 +10,7 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY edgechaindb ./edgechaindb
 COPY tests ./tests
+COPY experiments ./experiments
 RUN pip install --upgrade pip && pip install ".[dev]" && \
     python -c "import edgechaindb.gateway_server, edgechaindb.device_node, edgechaindb.benchmark, edgechaindb.experiments.runner, edgechaindb.experiments.worker, edgechaindb.experiments.merge" && \
     python -m edgechaindb.gateway_server --help >/dev/null && \
@@ -17,6 +18,7 @@ RUN pip install --upgrade pip && pip install ".[dev]" && \
     python -m edgechaindb.experiments.runner --help >/dev/null && \
     python -m edgechaindb.experiments.worker --help >/dev/null && \
     python -m edgechaindb.experiments.merge --help >/dev/null && \
+    python -m edgechaindb.experiments.runner --config /app/experiments/smoke.yaml --result-dir /tmp/experiment-plan --dry-run >/dev/null && \
     groupadd --gid 1000 edgechain && \
     useradd --uid 1000 --gid edgechain --create-home --shell /usr/sbin/nologin edgechain && \
     mkdir -p /data /app/result && chown -R edgechain:edgechain /data /app/result
