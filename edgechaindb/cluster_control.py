@@ -47,10 +47,19 @@ class DockerClusterController:
     resource metrics are reported as unavailable.
     """
 
-    def __init__(self, project_name: str | None = None) -> None:
+    def __init__(
+        self,
+        project_name: str | None = None,
+        *,
+        enabled: bool | None = None,
+    ) -> None:
         self.project_name = project_name or os.getenv(
             "EDGECHAIN_COMPOSE_PROJECT", "edgechaindb"
         )
+        if enabled is None:
+            raw_enabled = os.getenv("EDGECHAIN_CLUSTER_CONTROL_ENABLED", "1").strip().lower()
+            enabled = raw_enabled not in {"0", "false", "no", "off", "disabled"}
+        self.enabled = bool(enabled)
         self.client = None
         self.error: str | None = None
         self._metrics_cache: dict[str, Any] = {
@@ -58,6 +67,14 @@ class DockerClusterController:
             "value": {},
         }
         self._metrics_lock = threading.Lock()
+        if not self.enabled:
+            self.error = "Docker cluster control disabled by configuration"
+            log.info(
+                "docker_control_disabled",
+                project=self.project_name,
+                reason=self.error,
+            )
+            return
         if docker is None:
             self.error = "Python Docker SDK is unavailable"
             log.warning("docker_sdk_unavailable", error=self.error)
@@ -229,6 +246,7 @@ class DockerClusterController:
         if self.client is None:
             return {
                 "available": False,
+                "enabled": self.enabled,
                 "project": self.project_name,
                 "error": self.error,
                 "containers": [],
@@ -245,6 +263,7 @@ class DockerClusterController:
                     item["metrics"] = metrics.get(item["service"], {})
             return {
                 "available": True,
+                "enabled": self.enabled,
                 "project": self.project_name,
                 "error": None,
                 "checked_at": datetime.now(timezone.utc).isoformat(),
@@ -255,6 +274,7 @@ class DockerClusterController:
             log.error("docker_state_failed", error=error)
             return {
                 "available": False,
+                "enabled": self.enabled,
                 "project": self.project_name,
                 "error": error,
                 "containers": [],
@@ -329,6 +349,7 @@ class DockerClusterController:
             log.error("docker_network_state_failed", error=error)
             return {
                 "available": False,
+                "enabled": self.enabled,
                 "project": self.project_name,
                 "error": error,
                 "networks": [],

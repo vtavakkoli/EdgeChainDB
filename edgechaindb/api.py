@@ -95,7 +95,7 @@ def create_app(
 
     app = FastAPI(
         title="EdgeChainDB",
-        version="0.8.1",
+        version="0.8.2",
         description=(
             "Edge-first, signed and quorum-finalized IoT telemetry ledger with a "
             "development cluster monitor. Administrative endpoints require strong "
@@ -124,6 +124,8 @@ def create_app(
         quorum_threshold=quorum_threshold,
         batch_size=batch_size,
         authority_count=authority_count,
+        cluster_control_enabled=app.state.cluster_controller.enabled,
+        cluster_control_available=app.state.cluster_controller.available,
         monitor_url="http://localhost:3030",
     )
 
