@@ -1,5 +1,7 @@
 FROM python:3.12-slim
 
+RUN apt-get update && apt-get install -y --no-install-recommends iproute2 && rm -rf /var/lib/apt/lists/*
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
@@ -9,9 +11,12 @@ COPY pyproject.toml README.md ./
 COPY edgechaindb ./edgechaindb
 COPY tests ./tests
 RUN pip install --upgrade pip && pip install ".[dev]" && \
-    python -c "import edgechaindb.gateway_server, edgechaindb.device_node, edgechaindb.benchmark" && \
+    python -c "import edgechaindb.gateway_server, edgechaindb.device_node, edgechaindb.benchmark, edgechaindb.experiments.runner, edgechaindb.experiments.worker, edgechaindb.experiments.merge" && \
     python -m edgechaindb.gateway_server --help >/dev/null && \
     python -m edgechaindb.benchmark --help >/dev/null && \
+    python -m edgechaindb.experiments.runner --help >/dev/null && \
+    python -m edgechaindb.experiments.worker --help >/dev/null && \
+    python -m edgechaindb.experiments.merge --help >/dev/null && \
     groupadd --gid 1000 edgechain && \
     useradd --uid 1000 --gid edgechain --create-home --shell /usr/sbin/nologin edgechain && \
     mkdir -p /data /app/result && chown -R edgechain:edgechain /data /app/result

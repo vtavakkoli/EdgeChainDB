@@ -8,7 +8,7 @@ x-json-logging: &json-logging
       max-file: "5"
 
 x-device-common: &device-common
-  image: edgechaindb:0.6.0
+  image: edgechaindb:0.7.0
   build:
     context: .
     dockerfile: Dockerfile
@@ -50,7 +50,7 @@ x-device-common: &device-common
 
 services:
   gateway:
-    image: edgechaindb:0.6.0
+    image: edgechaindb:0.7.0
     build:
       context: .
       dockerfile: Dockerfile
@@ -257,7 +257,7 @@ services:
       - device-20-data:/data
 
   run:
-    image: edgechaindb:0.6.0
+    image: edgechaindb:0.7.0
     build:
       context: .
       dockerfile: Dockerfile
@@ -328,7 +328,7 @@ services:
       start_period: 5s
 
   test:
-    image: edgechaindb:0.6.0
+    image: edgechaindb:0.7.0
     build:
       context: .
       dockerfile: Dockerfile
@@ -350,6 +350,32 @@ services:
     volumes:
       - ./result:/app/result
       - ./docker-compose.yml:/app/docker-compose.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - edgechain-net
+
+  experiment:
+    image: edgechaindb:0.7.0
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["experiment"]
+    user: "0:0"
+    command: ["python", "-m", "edgechaindb.experiments.runner", "--config", "/app/experiments/full-matrix.yaml", "--result-dir", "/app/result/experiments", "--dry-run"]
+    restart: "no"
+    <<: *json-logging
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      EDGECHAIN_LOG_LEVEL: INFO
+    volumes:
+      - ./result:/app/result
+      - ./experiments:/app/experiments:ro
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - edgechain-net
