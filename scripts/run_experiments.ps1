@@ -10,8 +10,8 @@ param(
 $ErrorActionPreference = "Stop"
 & docker compose build experiment
 if ($LASTEXITCODE -ne 0) { throw "Image build failed with exit code $LASTEXITCODE" }
-$resultDir = "/app/result/experiments"
-if ($ShardCount -gt 1) { $resultDir = "/app/result/experiments/shard-{0:D3}-of-{1:D3}" -f $ShardIndex, $ShardCount }
+$resultDir = "/result/experiments"
+if ($ShardCount -gt 1) { $resultDir = "/result/experiments/shard-{0:D3}-of-{1:D3}" -f $ShardIndex, $ShardCount }
 $args = @(
     "compose", "--profile", "experiment", "run", "--rm", "experiment",
     "python", "-m", "edgechaindb.experiments.runner",

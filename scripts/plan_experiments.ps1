@@ -7,7 +7,7 @@ $args = @(
     "compose", "--profile", "experiment", "run", "--rm", "experiment",
     "python", "-m", "edgechaindb.experiments.runner",
     "--config", "/app/experiments/$Config",
-    "--result-dir", "/app/result/experiments",
+    "--result-dir", "/result/experiments",
     "--dry-run"
 )
 if ($Repetitions -gt 0) { $args += @("--repetitions", "$Repetitions") }

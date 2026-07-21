@@ -1,7 +1,7 @@
 param(
     [string]$Config = "full-matrix.yaml",
-    [string]$InputPattern = "/app/result/experiments/shard-*",
-    [string]$Output = "/app/result/experiments/combined"
+    [string]$InputPattern = "/result/experiments/shard-*",
+    [string]$Output = "/result/experiments/combined"
 )
 $ErrorActionPreference = "Stop"
 & docker compose --profile experiment run --rm experiment `
