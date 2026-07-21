@@ -164,12 +164,18 @@ def test_dynamic_runtime_logs_case_without_duplicate_run_id(tmp_path, monkeypatc
     def capture(event, **fields):
         captured.append((event, fields))
 
-    class FailingNetworks:
+    class EmptyCollection:
+        def list(self, **kwargs):
+            return []
+
+    class FailingNetworks(EmptyCollection):
         def create(self, *args, **kwargs):
             raise RuntimeError("docker provisioning reached")
 
     class FakeClient:
+        containers = EmptyCollection()
         networks = FailingNetworks()
+        volumes = EmptyCollection()
 
     runtime = object.__new__(DynamicDockerExperiment)
     runtime.settings = ExecutionSettings()
@@ -185,3 +191,82 @@ def test_dynamic_runtime_logs_case_without_duplicate_run_id(tmp_path, monkeypatc
     assert list(provisioning[1]).count("run_id") == 1
     assert result["status"] == "FAIL"
     assert result["error"] == "RuntimeError: docker provisioning reached"
+
+
+def test_dynamic_gateway_disables_nested_docker_control():
+    from edgechaindb.experiments.docker_runtime import DynamicDockerExperiment
+    from edgechaindb.experiments.model import ExperimentCase
+
+    case = ExperimentCase(
+        devices=1, events=1000, block_size=1, authorities=1, threshold=1,
+        packet_loss_percent=0, outage_seconds=5, repetition=1,
+    )
+    environment = DynamicDockerExperiment._gateway_environment(case)
+    assert environment["EDGECHAIN_CLUSTER_CONTROL_ENABLED"] == "0"
+    assert environment["EDGECHAIN_EXPERIMENT_RUN_ID"] == case.run_id
+
+
+def test_resource_sampler_survives_expected_gateway_outage():
+    import time
+    from edgechaindb.experiments.docker_runtime import GatewayResourceSampler
+
+    class FakeContainer:
+        def __init__(self):
+            self.calls = 0
+
+        def stats(self, stream=False):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("container temporarily stopped")
+            return {
+                "cpu_stats": {"cpu_usage": {"total_usage": 20}, "system_cpu_usage": 100, "online_cpus": 1},
+                "precpu_stats": {"cpu_usage": {"total_usage": 10}, "system_cpu_usage": 50},
+                "memory_stats": {"usage": 1024, "limit": 4096, "stats": {"inactive_file": 0}},
+                "networks": {"eth0": {"rx_bytes": 10, "tx_bytes": 20}},
+            }
+
+    sampler = GatewayResourceSampler(FakeContainer(), interval_seconds=0.01)
+    sampler.start()
+    time.sleep(0.08)
+    result = sampler.stop()
+    assert result["sample_errors"] >= 1
+    assert result["samples"] >= 1
+    assert result["memory_peak_bytes"] == 1024
+
+
+def test_dynamic_runtime_cleans_stale_resources_before_resume(monkeypatch):
+    from edgechaindb.experiments.docker_runtime import DynamicDockerExperiment
+    from edgechaindb.experiments.model import ExperimentCase
+
+    removed = []
+
+    class Resource:
+        def __init__(self, kind):
+            self.kind = kind
+        def remove(self, **kwargs):
+            removed.append(self.kind)
+        def disconnect(self, *args, **kwargs):
+            removed.append("disconnect")
+
+    class Collection:
+        def __init__(self, resources):
+            self.resources = resources
+        def list(self, **kwargs):
+            assert kwargs["filters"]["label"].startswith("edgechaindb.experiment=")
+            return self.resources
+
+    class Client:
+        containers = Collection([Resource("container")])
+        networks = Collection([Resource("network")])
+        volumes = Collection([Resource("volume")])
+
+    case = ExperimentCase(
+        devices=1, events=1000, block_size=1, authorities=1, threshold=1,
+        packet_loss_percent=0, outage_seconds=5, repetition=1,
+    )
+    runtime = object.__new__(DynamicDockerExperiment)
+    runtime.client = Client()
+    runtime.runner_container = object()
+    result = runtime._cleanup_stale_case_resources(case)
+    assert result == {"containers": 1, "networks": 1, "volumes": 1}
+    assert removed == ["container", "disconnect", "network", "volume"]
