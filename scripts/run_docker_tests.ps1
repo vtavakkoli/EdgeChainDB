@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 Set-Location (Join-Path $PSScriptRoot "..")
 
 try {
-  Write-Host "Building EdgeChainDB 0.8.0 and starting the benchmark..." -ForegroundColor Cyan
+  Write-Host "Building EdgeChainDB 0.8.1 and starting the benchmark..." -ForegroundColor Cyan
   # Preserve named volumes. The benchmark is a durability test, so deleting the
   # ledger before every run would hide persistence and recovery defects.
   docker compose --profile test up -d --build --force-recreate test
