@@ -165,7 +165,11 @@ class DynamicDockerExperiment:
         result: dict[str, Any]
 
         (run_dir / "config.json").write_text(json.dumps(case.to_dict(), indent=2), encoding="utf-8")
-        log.info("matrix_run_provisioning", run_id=case.run_id, **case.to_dict())
+        # ``ExperimentCase.to_dict()`` already includes ``run_id``. Passing it
+        # both explicitly and through ``**`` raises before the logger is called,
+        # aborting the entire campaign on its first case. Keep one canonical
+        # structured payload so every case field is logged exactly once.
+        log.info("matrix_run_provisioning", **case.to_dict())
 
         try:
             network = self.client.networks.create(network_name, driver="bridge", internal=True, labels={"edgechaindb.experiment": case.run_id})
