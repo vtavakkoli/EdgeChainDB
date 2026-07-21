@@ -41,7 +41,18 @@ def test_compose_uses_module_entrypoints_and_versioned_image():
 
     compose = yaml.safe_load(Path("docker-compose.yml").read_text())
     services = compose["services"]
-    assert services["gateway"]["image"] == "edgechaindb:0.6.0"
+    assert services["gateway"]["image"] == "edgechaindb:0.7.0"
     assert services["run"]["command"] == ["python", "-m", "edgechaindb.cluster_runtime"]
     assert services["test"]["command"][:3] == ["python", "-m", "edgechaindb.benchmark"]
     assert services["device-01"]["command"][:3] == ["python", "-m", "edgechaindb.device_node"]
+
+
+def test_compose_has_dynamic_experiment_runner():
+    import yaml
+
+    compose = yaml.safe_load(Path("docker-compose.yml").read_text())
+    experiment = compose["services"]["experiment"]
+    assert "experiment" in experiment["profiles"]
+    assert experiment["image"] == "edgechaindb:0.7.0"
+    assert "/var/run/docker.sock:/var/run/docker.sock" in experiment["volumes"]
+    assert experiment["command"][:3] == ["python", "-m", "edgechaindb.experiments.runner"]
