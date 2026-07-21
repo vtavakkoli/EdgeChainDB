@@ -141,3 +141,47 @@ def test_experiment_worker_delivers_scalable_outbox(tmp_path: Path):
         assert json.loads((tmp_path / "worker" / "metrics.json").read_text())["events_delivered"] == 25
     finally:
         stop_local_server(server, thread)
+
+
+def test_dynamic_runtime_logs_case_without_duplicate_run_id(tmp_path, monkeypatch):
+    """Regression: campaign must reach Docker provisioning for the first case."""
+    from edgechaindb.experiments import docker_runtime
+    from edgechaindb.experiments.docker_runtime import DynamicDockerExperiment
+    from edgechaindb.experiments.model import ExecutionSettings, ExperimentCase
+
+    case = ExperimentCase(
+        devices=1,
+        events=1000,
+        block_size=1,
+        authorities=1,
+        threshold=1,
+        packet_loss_percent=0,
+        outage_seconds=5,
+        repetition=1,
+    )
+    captured = []
+
+    def capture(event, **fields):
+        captured.append((event, fields))
+
+    class FailingNetworks:
+        def create(self, *args, **kwargs):
+            raise RuntimeError("docker provisioning reached")
+
+    class FakeClient:
+        networks = FailingNetworks()
+
+    runtime = object.__new__(DynamicDockerExperiment)
+    runtime.settings = ExecutionSettings()
+    runtime.result_root = tmp_path
+    runtime.client = FakeClient()
+    runtime.runner_container = None
+    monkeypatch.setattr(docker_runtime.log, "info", capture)
+
+    result = runtime.run(case, tmp_path / case.run_id)
+
+    provisioning = next(item for item in captured if item[0] == "matrix_run_provisioning")
+    assert provisioning[1]["run_id"] == case.run_id
+    assert list(provisioning[1]).count("run_id") == 1
+    assert result["status"] == "FAIL"
+    assert result["error"] == "RuntimeError: docker provisioning reached"
