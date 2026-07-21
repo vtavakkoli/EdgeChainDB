@@ -32,11 +32,11 @@ if ($Repair) {
 
 Step "Gateway image and module command"
 $rendered = docker compose config
-if (($rendered -notmatch "edgechaindb:0.8.1") -or ($rendered -notmatch "edgechaindb.gateway_server")) {
-    Write-Host "FAIL Compose is not using the 0.8.1 module entrypoint" -ForegroundColor Red
+if (($rendered -notmatch "edgechaindb:0.8.2") -or ($rendered -notmatch "edgechaindb.gateway_server")) {
+    Write-Host "FAIL Compose is not using the 0.8.2 module entrypoint" -ForegroundColor Red
     $failures++
 } else {
-    Write-Host "PASS image edgechaindb:0.8.1 and python -m gateway entrypoint" -ForegroundColor Green
+    Write-Host "PASS image edgechaindb:0.8.2 and python -m gateway entrypoint" -ForegroundColor Green
 }
 
 Step "Gateway container state"
