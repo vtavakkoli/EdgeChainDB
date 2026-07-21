@@ -1,5 +1,10 @@
-name: EdgeChainDB full factorial experimental matrix, ten repetitions
-repetitions: 10
+name: EdgeChainDB one-day balanced screening campaign, five repetitions
+repetitions: 5
+design:
+  type: balanced_screening
+  configurations_per_repetition: 60
+  seed: 20260721
+  target_runtime_hours: 24
 matrix:
   devices: [1, 5, 20, 50, 100]
   events: [10, 100, 1000, 10000]
@@ -15,10 +20,10 @@ execution:
   image: edgechaindb:0.8.3
   packet_loss_mode: netem
   gateway_start_timeout_seconds: 120
-  run_timeout_seconds: 14400
+  run_timeout_seconds: 3600
   reconnect_grace_seconds: 600
   cleanup_successful_runs: true
   retain_failed_containers: false
   collect_success_logs: false
   max_latency_samples_per_device: 10000
-  worker_generation_batch: 250
+  worker_generation_batch: 1000

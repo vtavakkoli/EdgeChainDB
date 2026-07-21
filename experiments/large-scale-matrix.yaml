@@ -1,8 +1,8 @@
-name: EdgeChainDB full factorial experimental matrix, ten repetitions
-repetitions: 10
+name: EdgeChainDB legacy large-event stress matrix
+repetitions: 5
 matrix:
   devices: [1, 5, 20, 50, 100]
-  events: [10, 100, 1000, 10000]
+  events: [1000, 10000, 100000, 1000000]
   block_size: [1, 16, 64, 256, 1024]
   authority_thresholds:
     - {authorities: 1, threshold: 1}

@@ -1,8 +1,10 @@
-name: EdgeChainDB full factorial experimental matrix
+name: EdgeChainDB reduced-event full factorial experimental matrix
 repetitions: 5
+design:
+  type: full_factorial
 matrix:
   devices: [1, 5, 20, 50, 100]
-  events: [1000, 10000, 100000, 1000000]
+  events: [10, 100, 1000, 10000]
   block_size: [1, 16, 64, 256, 1024]
   authority_thresholds:
     - {authorities: 1, threshold: 1}
@@ -12,13 +14,13 @@ matrix:
   packet_loss_percent: [0, 1, 5, 10]
   outage_seconds: [5, 30, 300]
 execution:
-  image: edgechaindb:0.8.2
+  image: edgechaindb:0.8.3
   packet_loss_mode: netem
   gateway_start_timeout_seconds: 120
-  run_timeout_seconds: 14400
+  run_timeout_seconds: 7200
   reconnect_grace_seconds: 600
   cleanup_successful_runs: true
   retain_failed_containers: false
   collect_success_logs: false
   max_latency_samples_per_device: 10000
-  worker_generation_batch: 250
+  worker_generation_batch: 1000
