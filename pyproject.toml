@@ -22,7 +22,6 @@ classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
   "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
@@ -30,7 +29,6 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Topic :: Database",
   "Topic :: Security :: Cryptography",
-  "Typing :: Typed",
 ]
 dependencies = [
   "cbor2>=5.6",
