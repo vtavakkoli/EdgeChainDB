@@ -149,6 +149,24 @@ class SharedState:
     error: str | None = None
 
 
+def _progress_timeout_exceeded(
+    *,
+    now: float,
+    last_progress_at: float,
+    timeout_seconds: int,
+) -> bool:
+    """Return whether delivery has made no progress for the configured period.
+
+    The timeout is intentionally based on inactivity, not on total drain time.
+    High-contention experiments may require longer than one timeout window to
+    empty all outboxes while still delivering events continuously.
+    """
+
+    if timeout_seconds < 1:
+        raise ValueError("progress timeout must be at least one second")
+    return now - last_progress_at >= timeout_seconds
+
+
 def _configure_packet_loss(percent: float, mode: str) -> tuple[str, str | None]:
     if percent <= 0 or mode == "none":
         return "none", None
@@ -228,7 +246,7 @@ def _sender(
     randomizer = random.Random(random_seed)
     enrolled = False
     last_progress = 0
-    deadline_after_generation: float | None = None
+    last_progress_at: float | None = None
     with httpx.Client(base_url=gateway_url, timeout=request_timeout) as client:
         while True:
             with lock:
@@ -239,11 +257,23 @@ def _sender(
             queued = outbox.count()
             if generator_done and queued == 0:
                 return
-            if generator_done and deadline_after_generation is None:
-                deadline_after_generation = time.monotonic() + reconnect_deadline_seconds
-            if deadline_after_generation is not None and time.monotonic() > deadline_after_generation:
+            now = time.monotonic()
+            if generator_done and last_progress_at is None:
+                last_progress_at = now
+            if (
+                last_progress_at is not None
+                and _progress_timeout_exceeded(
+                    now=now,
+                    last_progress_at=last_progress_at,
+                    timeout_seconds=reconnect_deadline_seconds,
+                )
+            ):
                 with lock:
-                    shared.error = f"sender reconnect deadline exceeded with {queued} buffered events"
+                    shared.error = (
+                        "sender stalled for "
+                        f"{reconnect_deadline_seconds}s without delivery progress "
+                        f"with {queued} buffered events"
+                    )
                 return
 
             try:
@@ -277,6 +307,7 @@ def _sender(
                     raise RuntimeError(f"gateway rejected event: {value}")
                 outbox.acknowledge(int(row["sequence"]))
                 latency.add(elapsed_ms)
+                last_progress_at = time.monotonic()
                 with lock:
                     shared.delivered += 1
                     shared.duplicate_deliveries += int(bool(value.get("duplicate")))
@@ -314,6 +345,8 @@ def run_worker(
 ) -> dict[str, Any]:
     if events < 0:
         raise ValueError("events must be non-negative")
+    if reconnect_deadline_seconds < 1:
+        raise ValueError("reconnect_deadline_seconds must be at least one")
     started_wall = time.time()
     started = time.perf_counter()
     state_dir.mkdir(parents=True, exist_ok=True)
@@ -335,6 +368,7 @@ def run_worker(
         requested_packet_loss_mode=packet_loss_mode,
         effective_packet_loss_mode=effective_loss_mode,
         packet_loss_note=loss_note,
+        delivery_stall_timeout_seconds=reconnect_deadline_seconds,
     )
 
     generator = threading.Thread(
@@ -429,7 +463,19 @@ def main() -> None:
     parser.add_argument("--packet-loss-percent", type=float, default=float(os.getenv("DEVICE_PACKET_LOSS_PERCENT", "0")))
     parser.add_argument("--packet-loss-mode", choices=("netem", "application", "none"), default=os.getenv("DEVICE_PACKET_LOSS_MODE", "netem"))
     parser.add_argument("--request-timeout", type=float, default=float(os.getenv("DEVICE_REQUEST_TIMEOUT", "5")))
-    parser.add_argument("--reconnect-deadline-seconds", type=int, default=int(os.getenv("DEVICE_RECONNECT_DEADLINE_SECONDS", "900")))
+    parser.add_argument(
+        "--stall-timeout-seconds",
+        "--reconnect-deadline-seconds",
+        dest="reconnect_deadline_seconds",
+        type=int,
+        default=int(
+            os.getenv(
+                "DEVICE_STALL_TIMEOUT_SECONDS",
+                os.getenv("DEVICE_RECONNECT_DEADLINE_SECONDS", "900"),
+            )
+        ),
+        help="fail only after this many seconds without a successful delivery",
+    )
     parser.add_argument("--generation-batch", type=int, default=int(os.getenv("DEVICE_GENERATION_BATCH", "250")))
     parser.add_argument("--max-latency-samples", type=int, default=int(os.getenv("DEVICE_MAX_LATENCY_SAMPLES", "10000")))
     parser.add_argument("--cpu-watts", type=float, default=float(os.getenv("DEVICE_CPU_WATTS", "15")))
