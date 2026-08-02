@@ -10,6 +10,26 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 authors = [{name = "Vahid Tavakkoli"}]
+keywords = [
+  "iot",
+  "edge-computing",
+  "tamper-evident",
+  "merkle-tree",
+  "quorum",
+  "sqlite",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Database",
+  "Topic :: Security :: Cryptography",
+]
 dependencies = [
   "cbor2>=5.6",
   "cryptography>=44",
@@ -21,8 +41,14 @@ dependencies = [
   "docker>=7.1"
 ]
 
+[project.urls]
+Homepage = "https://github.com/vtavakkoli/EdgeChainDB"
+Repository = "https://github.com/vtavakkoli/EdgeChainDB"
+Issues = "https://github.com/vtavakkoli/EdgeChainDB/issues"
+Changelog = "https://github.com/vtavakkoli/EdgeChainDB/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0,<10"]
 
 [project.scripts]
 edgechain-demo = "edgechaindb.simulator:main"
@@ -41,6 +67,8 @@ edgechain-experiment-merge = "edgechaindb.experiments.merge:main"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+strict_config = true
+strict_markers = true
 
 [tool.setuptools.packages.find]
 include = ["edgechaindb*"]
