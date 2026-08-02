@@ -21,6 +21,9 @@ execution:
   packet_loss_mode: netem
   gateway_start_timeout_seconds: 120
   run_timeout_seconds: 3600
+  # The worker now interprets this as a no-delivery-progress timeout. Active
+  # workers may drain for longer than this value, but a genuinely stalled node
+  # still fails with an actionable buffered-event count.
   reconnect_grace_seconds: 600
   cleanup_successful_runs: true
   retain_failed_containers: false
