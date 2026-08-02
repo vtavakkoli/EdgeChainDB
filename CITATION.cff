@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If you use EdgeChainDB in research, please cite this software."
+title: "EdgeChainDB: A Continuity-Aware Quorum-Signed Edge Ledger for IoT Telemetry"
+type: software
+authors:
+  - family-names: Mohsenzadegan
+    given-names: Kabeh
+    affiliation: University of Klagenfurt
+  - family-names: Tavakkoli
+    given-names: Vahid
+    affiliation: University of Klagenfurt
+    orcid: "https://orcid.org/0000-0002-4881-9851"
+  - family-names: Kyamakya
+    given-names: Kyandoghere
+    affiliation: University of Klagenfurt
+repository-code: "https://github.com/vtavakkoli/EdgeChainDB"
+url: "https://github.com/vtavakkoli/EdgeChainDB"
+license: MIT
+version: 0.8.3
+date-released: 2026-07-21
+keywords:
+  - IoT
+  - edge computing
+  - tamper-evident database
+  - Merkle tree
+  - quorum signatures
+  - SQLite
