@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "If you use EdgeChainDB in research, please cite this software."
+message: "If you use EdgeChainDB in research, please cite the software and the CloudCom 2026 paper listed below."
 title: "EdgeChainDB: A Continuity-Aware Quorum-Signed Edge Ledger for IoT Telemetry"
 type: software
 authors:
@@ -24,3 +24,18 @@ keywords:
   - Merkle tree
   - quorum signatures
   - SQLite
+references:
+  - type: conference-paper
+    authors:
+      - family-names: Mohsenzadegan
+        given-names: Kabeh
+        affiliation: University of Klagenfurt
+      - family-names: Tavakkoli
+        given-names: Vahid
+        affiliation: University of Klagenfurt
+      - family-names: Kyamakya
+        given-names: Kyandoghere
+        affiliation: University of Klagenfurt
+    title: "EdgeChainDB: A Continuity-Aware Quorum-Signed Edge Ledger for Resilient IoT Telemetry"
+    year: 2026
+    collection-title: "2026 IEEE International Conference on Cloud Computing Technology and Science (CloudCom)"
