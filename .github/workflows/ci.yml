@@ -44,14 +44,14 @@ jobs:
       - name: Run test suite
         run: python -m pytest
 
-      - name: Run reviewer-validation smoke profile
-        if: matrix.python-version == '3.13'
-        run: python -m edgechaindb.reviewer_validation --profile smoke --result-dir result/reviewer-validation-ci
+      - name: Run validation smoke profile
+        if: matrix.python-version == '3.12'
+        run: python -m edgechaindb.validation --profile smoke --result-dir result/validation-ci
 
   compose-validation:
-    name: Validate Docker Compose
+    name: Validate Docker Compose and image
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
@@ -59,3 +59,9 @@ jobs:
 
       - name: Validate Compose configuration
         run: docker compose config --quiet
+
+      - name: Build Docker test image
+        run: docker compose build test
+
+      - name: Run Python test suite inside Docker image
+        run: docker compose run --rm --no-deps test python -m pytest

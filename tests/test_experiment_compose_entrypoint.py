@@ -23,5 +23,6 @@ def test_empty_campaign_creates_comprehensive_report_immediately(tmp_path):
 
 def test_dockerfile_copies_experiment_configs_into_image():
     dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+    assert "COPY pyproject.toml README.md Dockerfile ./" in dockerfile
     assert "COPY experiments ./experiments" in dockerfile
     assert "--config /app/experiments/smoke.yaml" in dockerfile

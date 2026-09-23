@@ -7,14 +7,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md Dockerfile ./
 COPY edgechaindb ./edgechaindb
 COPY tests ./tests
 COPY experiments ./experiments
 RUN pip install --upgrade pip && pip install ".[dev]" && \
-    python -c "import edgechaindb.gateway_server, edgechaindb.device_node, edgechaindb.benchmark, edgechaindb.experiments.runner, edgechaindb.experiments.worker, edgechaindb.experiments.merge" && \
+    python -c "import edgechaindb.gateway_server, edgechaindb.device_node, edgechaindb.benchmark, edgechaindb.validation, edgechaindb.experiments.runner, edgechaindb.experiments.worker, edgechaindb.experiments.merge" && \
     python -m edgechaindb.gateway_server --help >/dev/null && \
     python -m edgechaindb.benchmark --help >/dev/null && \
+    python -m edgechaindb.validation --help >/dev/null && \
     python -m edgechaindb.experiments.runner --help >/dev/null && \
     python -m edgechaindb.experiments.worker --help >/dev/null && \
     python -m edgechaindb.experiments.merge --help >/dev/null && \

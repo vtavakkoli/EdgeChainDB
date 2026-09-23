@@ -843,6 +843,36 @@ services:
     - /var/run/docker.sock:/var/run/docker.sock
     networks:
     - edgechain-net
+  validation:
+    logging: *id001
+    image: edgechaindb:0.8.3
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles:
+    - validation
+    user: 0:0
+    entrypoint:
+    - python
+    - -m
+    - edgechaindb.validation
+    command:
+    - --profile
+    - smoke
+    - --result-dir
+    - /app/result/validation
+    restart: 'no'
+    read_only: true
+    tmpfs:
+    - /tmp
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    environment:
+      EDGECHAIN_LOG_LEVEL: INFO
+    volumes:
+    - ./result/validation:/app/result/validation
   experiment:
     logging: *id001
     image: edgechaindb:0.8.3
