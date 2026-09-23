@@ -245,7 +245,7 @@ Version 0.6 also executes eight research benchmarks:
    configurations. This is threshold-quorum testing, not a proof of general
    asynchronous Byzantine consensus.
 
-### CloudCom 2026 reviewer-validation suite
+### Validation suite
 
 The accepted CloudCom paper received requests for three additional validation
 experiments. They are implemented in a separate runner so the original
