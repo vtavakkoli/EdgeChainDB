@@ -11,6 +11,9 @@ All notable changes to EdgeChainDB are documented in this file. The format follo
 
 ### Added
 
+- CloudCom reviewer-validation runner with adversarial tamper injection, matched unsigned SQLite baseline measurements, and offline durability/checkpoint-loss boundary experiments.
+- Optional fail-closed durable outbox capacity enforcement with explicit overflow errors and regression coverage.
+- CI smoke execution for the reviewer-validation profile.
 - MIT license.
 - GitHub Actions validation across Python 3.11, 3.12, and 3.13.
 - Docker Compose configuration validation.

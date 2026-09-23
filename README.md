@@ -245,6 +245,49 @@ Version 0.6 also executes eight research benchmarks:
    configurations. This is threshold-quorum testing, not a proof of general
    asynchronous Byzantine consensus.
 
+### CloudCom 2026 reviewer-validation suite
+
+The accepted CloudCom paper received requests for three additional validation
+experiments. They are implemented in a separate runner so the original
+180-run campaign and the default Docker benchmark remain unchanged.
+
+Run a quick validation first:
+
+```bash
+edgechain-reviewer-validation --profile smoke \
+  --result-dir result/reviewer-validation
+```
+
+Run the camera-ready experiment profile with:
+
+```bash
+edgechain-reviewer-validation --profile paper \
+  --result-dir result/reviewer-validation
+```
+
+The paper profile performs:
+
+- adversarial ledger mutation across 14 attack classes, including stored payload
+  changes, event-signature corruption, device-chain changes, deletion,
+  block-membership reordering, Merkle-root corruption, previous-block changes,
+  policy-commitment changes, authority-snapshot changes, quorum-signature
+  corruption/deletion, finalization-flag changes, and block-mapping changes;
+- untouched control-ledger verification to measure false positives, in addition
+  to the existing replay and deletion trials;
+- a matched unsigned SQLite WAL baseline at 1, 20, and 100 devices with 1,000
+  and 10,000 total events per run, repeated five times. Event streams are
+  pre-generated before timing so the comparison isolates gateway-side
+  persistence, signature verification, and block-finalization overhead;
+- a durability-boundary experiment with a 1,000-event outbox, explicit
+  fail-closed C+1 behavior, repeated overflow attempts, and an actual
+  checkpoint-loss reconnect attempt through the device synchronization path.
+
+Artifacts are written as JSON and CSV under
+`result/reviewer-validation/benchmarks/`, together with `summary.json` and
+`report.html`. The paper profile can take substantial time; it is intended as
+camera-ready evidence and does not replace the previously reported canonical
+campaign.
+
 ## Docker workflows and live cluster dashboard
 
 The Compose topology now exposes two explicit workflows.

@@ -219,7 +219,9 @@ def run_device(
     key_existed = key_path.exists()
     key = KeyPair.load_or_create(key_path)
     state_path = state_dir / "state.json"
-    outbox = DurableOutbox(state_dir / "outbox.json")
+    outbox = DurableOutbox(
+        state_dir / "outbox.json", max_items=max_buffered_events
+    )
     local_state: dict[str, Any] = {
         "sequence": 0,
         "previous_event_hash": "00" * 32,
