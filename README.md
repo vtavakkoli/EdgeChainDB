@@ -1,15 +1,35 @@
 # EdgeChainDB
 
-EdgeChainDB is a Python prototype for a **tamper-evident IoT database**. It avoids proof-of-work and instead combines:
+EdgeChainDB is an open-source, edge-first **tamper-evident IoT telemetry database**. It keeps telemetry queryable in SQLite while adding signed device continuity, Merkle-rooted gateway blocks, threshold approval, selective proofs, and durable offline buffering. The project targets research and prototype deployments in factories, smart buildings, energy systems, fleets, and municipal IoT.
 
-1. **Device micro-chains** — every device signs each event and links it to its previous event.
-2. **Gateway macro-chain** — verified events are grouped into Merkle blocks.
-3. **Authority quorum** — a block becomes final only after the configured number of authorities sign it.
-4. **Queryable SQLite storage** — telemetry remains easy to query while cryptographic verification detects changes.
-5. **Selective proofs** — one event can be proven to belong to a block without disclosing the whole block.
+> **Status:** research-quality prototype. EdgeChainDB is not a replicated asynchronous BFT database and is not yet a production security product.
+
+## Technology stack
+
+| Area | Technology |
+| --- | --- |
+| Reference runtime | **Python 3.12** |
+| API and services | FastAPI, Uvicorn, Pydantic |
+| Storage | SQLite with WAL and transactional persistence |
+| Cryptography | Ed25519 (`cryptography`), SHA-256, Merkle trees |
+| Canonical encoding | Deterministic CBOR (`cbor2`) |
+| HTTP and test clients | `httpx` |
+| Experiment configuration | PyYAML |
+| Containers | Docker and Docker Compose |
+| Testing | pytest, integration/system scenarios |
+| CI | GitHub Actions |
+
+The Docker image uses Python 3.12 as the reference runtime. The package remains tested on the additional Python versions listed in CI.
+
+## Core capabilities
+
+1. **Device micro-chains** — each device signs every event and links it to the previous event.
+2. **Gateway macro-chain** — verified events are grouped into Merkle-rooted blocks.
+3. **Authority threshold approval** — a block becomes final after the configured signature threshold is reached.
+4. **Queryable SQLite storage** — telemetry remains directly queryable while verification detects unauthorized changes.
+5. **Selective proofs** — individual events can be proven to belong to a finalized block.
 6. **Policy commitment** — each block commits to the active validation and batching policy.
-
-This combination is intended for factories, smart buildings, energy systems, fleets, and municipal IoT. It is a research-quality prototype, not a claim that the architecture is patent-new and not yet a production security product.
+7. **Durable offline operation** — devices buffer signed events locally and replay them in order after reconnection.
 
 ## Why this design fits IoT
 
@@ -247,25 +267,31 @@ Version 0.6 also executes eight research benchmarks:
 
 ### Validation suite
 
-The accepted CloudCom paper received requests for three additional validation
-experiments. They are implemented in a separate runner so the original
-180-run campaign and the default Docker benchmark remain unchanged.
+EdgeChainDB includes a standalone validation runner for integrity, baseline
+overhead, and resilience-boundary experiments. It is deliberately separate from
+the default 20-node benchmark, so validation can evolve without changing the
+canonical system-test workflow.
 
-Run a quick validation first:
-
-```bash
-edgechain-reviewer-validation --profile smoke \
-  --result-dir result/reviewer-validation
-```
-
-Run the camera-ready experiment profile with:
+Run the fast validation profile locally:
 
 ```bash
-edgechain-reviewer-validation --profile paper \
-  --result-dir result/reviewer-validation
+edgechain-validation --profile smoke --result-dir result/validation
 ```
 
-The paper profile performs:
+Run the complete validation matrix:
+
+```bash
+edgechain-validation --profile full --result-dir result/validation
+```
+
+The same suite is available through Docker Compose:
+
+```bash
+docker compose --profile validation run --rm validation \
+  --profile full --result-dir /app/result/validation
+```
+
+The full profile performs:
 
 - adversarial ledger mutation across 14 attack classes, including stored payload
   changes, event-signature corruption, device-chain changes, deletion,
@@ -273,24 +299,24 @@ The paper profile performs:
   policy-commitment changes, authority-snapshot changes, quorum-signature
   corruption/deletion, finalization-flag changes, and block-mapping changes;
 - untouched control-ledger verification to measure false positives, in addition
-  to the existing replay and deletion trials;
+  to replay and destructive-deletion trials;
 - a matched unsigned SQLite WAL baseline at 1, 20, and 100 devices with 1,000
-  and 10,000 total events per run, repeated five times. Event streams are
-  pre-generated before timing so the comparison isolates gateway-side
-  persistence, signature verification, and block-finalization overhead;
+  and 10,000 total events per run, repeated five times;
 - a durability-boundary experiment with a 1,000-event outbox, explicit
-  fail-closed C+1 behavior, repeated overflow attempts, and an actual
-  checkpoint-loss reconnect attempt through the device synchronization path.
+  fail-closed C+1 behavior, repeated overflow attempts, and checkpoint-loss
+  reconnect validation.
 
-Artifacts are written as JSON and CSV under
-`result/reviewer-validation/benchmarks/`, together with `summary.json` and
-`report.html`. The paper profile can take substantial time; it is intended as
-camera-ready evidence and does not replace the previously reported canonical
-campaign.
+Artifacts are written as JSON and CSV under `result/validation/benchmarks/`,
+together with `summary.json`, `report.html`, and the top-level
+`validation.json` manifest. The `full` profile can take substantial time.
+
+For backwards compatibility, `edgechain-reviewer-validation` and
+`--profile paper` remain aliases for the generic validation runner and
+`--profile full`, respectively.
 
 ## Docker workflows and live cluster dashboard
 
-The Compose topology now exposes two explicit workflows.
+The Compose topology exposes the long-running cluster and complete benchmark workflows below. The standalone `validation` profile is documented above.
 
 ### 1. Start the complete running cluster
 
