@@ -44,6 +44,10 @@ jobs:
       - name: Run test suite
         run: python -m pytest
 
+      - name: Run reviewer-validation smoke profile
+        if: matrix.python-version == '3.13'
+        run: python -m edgechaindb.reviewer_validation --profile smoke --result-dir result/reviewer-validation-ci
+
   compose-validation:
     name: Validate Docker Compose
     runs-on: ubuntu-latest
