@@ -396,9 +396,13 @@ you intentionally want to erase the ledger and all device checkpoints.
 
 ### 2. Run the complete Docker benchmark
 
+After pulling source changes, rebuild the test image so repository-level test assets are current:
+
 ```bash
-docker compose up -d test
+docker compose up -d --build test
 ```
+
+For subsequent runs with an unchanged image, `docker compose up -d test` is sufficient.
 
 The `test` service waits until all 20 devices have generated telemetry, stops
 them to create a stable benchmark window, runs unit/integration/security/scale
