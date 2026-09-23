@@ -10,16 +10,29 @@ class OutboxCorruptionError(RuntimeError):
     pass
 
 
+class OutboxFullError(RuntimeError):
+    pass
+
+
 class DurableOutbox:
     """Small durable FIFO for already-signed device events.
 
     Events are persisted before network delivery. A duplicate response is safe:
     the gateway classifies the same signed event as an idempotent retry and the
     device then acknowledges it locally.
+
+    ``max_items`` is optional for backward compatibility. When configured, an
+    append at capacity fails closed with :class:`OutboxFullError`; existing
+    entries are never evicted or overwritten. Loading an already over-capacity
+    outbox is allowed so a device can drain durable state after an operator
+    lowers the configured limit.
     """
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, max_items: int | None = None) -> None:
+        if max_items is not None and max_items < 1:
+            raise ValueError("max_items must be positive when configured")
         self.path = Path(path)
+        self.max_items = max_items
         self._items: list[dict[str, Any]] = []
         self._load()
 
@@ -57,10 +70,24 @@ class DurableOutbox:
     def __len__(self) -> int:
         return len(self._items)
 
+    @property
+    def at_capacity(self) -> bool:
+        return self.max_items is not None and len(self._items) >= self.max_items
+
+    @property
+    def remaining_capacity(self) -> int | None:
+        if self.max_items is None:
+            return None
+        return max(0, self.max_items - len(self._items))
+
     def items(self) -> list[dict[str, Any]]:
         return [dict(item) for item in self._items]
 
     def append(self, event: dict[str, Any]) -> None:
+        if self.at_capacity:
+            raise OutboxFullError(
+                f"outbox capacity {self.max_items} reached; refusing to evict durable events"
+            )
         value = dict(event)
         sequence = int(value["sequence"])
         if self._items and sequence != int(self._items[-1]["sequence"]) + 1:
