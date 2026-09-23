@@ -197,6 +197,7 @@ def build_spec(
 
             metrics = {
                 "outbox_capacity_events": capacity,
+                "attempted_events_without_delivery": capacity + overflow_attempts,
                 "overflow_attempts": overflow_attempts,
                 "overflow_rejected": overflow_rejected,
                 "overflow_rejection_rate": round(
