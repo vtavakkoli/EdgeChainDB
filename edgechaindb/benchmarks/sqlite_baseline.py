@@ -62,6 +62,7 @@ def _initialize_plain_sqlite(path: Path) -> None:
 def _plain_insert(path: Path, event: Any, received_at_ms: int) -> None:
     # Match EdgeChainDB's persistence cadence: one connection + transaction per event.
     with sqlite3.connect(path, timeout=30.0, isolation_level=None) as connection:
+        connection.execute("PRAGMA foreign_keys=ON")
         connection.execute("PRAGMA busy_timeout=30000")
         connection.execute("BEGIN IMMEDIATE")
         try:
@@ -163,17 +164,20 @@ def _run_edgechain(
     latencies: list[float] = []
     wall_started = time.perf_counter()
     cpu_started = time.process_time()
+    pending_since_block = 0
     for _, _, event in events:
         started = time.perf_counter()
         accepted = ledger.accept_event(event)
         latencies.append((time.perf_counter() - started) * 1000.0)
         if not accepted.get("accepted"):
             raise AssertionError(f"EdgeChainDB rejected baseline event: {accepted}")
-        if database.pending_count() >= block_size:
+        pending_since_block += 1
+        if pending_since_block >= block_size:
             ledger.propose_block(
                 "baseline-authority", authority.private_key, max_events=block_size
             )
-    if database.pending_count():
+            pending_since_block = 0
+    if pending_since_block:
         ledger.propose_block(
             "baseline-authority", authority.private_key, max_events=block_size
         )
